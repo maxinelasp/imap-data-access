@@ -4,7 +4,7 @@ import pathlib
 
 def extract_filename_components(filename: type[str | pathlib.Path]):
     """
-    Extracts all components from filename.
+    Extracts all components from filename. Does not validate instrument or level.
 
     Will return a dictionary with the following keys:
     { instrument, datalevel, descriptor, startdate, enddate, version, extension }
