@@ -8,8 +8,9 @@ import os
 from pathlib import Path
 
 from imap_data_access.io import download, query, upload
+from imap_data_access.file_validation import construct_upload_path
 
-__all__ = ["query", "download", "upload"]
+__all__ = ["query", "download", "upload", "construct_upload_path"]
 __version__ = "0.2.0"
 
 

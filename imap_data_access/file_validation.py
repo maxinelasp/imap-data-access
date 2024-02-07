@@ -72,7 +72,7 @@ def extract_filename_components(filename: str | Path):
     return components
 
 
-def construct_upload_path(filename: str | Path) -> str:
+def construct_upload_path(filename: str | Path) -> Path:
     """
     Given the filename, construct the expected upload path.
 
@@ -86,16 +86,20 @@ def construct_upload_path(filename: str | Path) -> str:
 
     Returns
     -------
-    str
+    Path
         File path generated from the filename.
 
     """
 
     components = extract_filename_components(filename)
+
     return (
-        f"{components['mission']}/{components['instrument']}/"
-        f"{components['datalevel']}/{components['startdate'][:4]}/"
-        f"{components['startdate'][4:6]}/{filename}"
+        Path(
+            f"{components['mission']}/{components['instrument']}/"
+            f"{components['datalevel']}/{components['startdate'][:4]}/"
+            f"{components['startdate'][4:6]}"
+        )
+        / filename
     )
 
 
