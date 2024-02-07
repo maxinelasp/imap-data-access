@@ -1,7 +1,8 @@
 """Methods for managing and validating filenames and filepaths"""
 import re
-import pathlib
+
 from datetime import datetime
+from pathlib import Path
 
 VALID_INSTRUMENTS = {
     "codice",
@@ -23,18 +24,89 @@ VALID_DATALEVELS = {"l0", "l1", "l1a", "l1b", "l1c", "l1d", "l2"}
 VALID_FILE_EXTENSION = {"pkts", "cdf"}
 
 FILENAME_CONVENTION = (
-            "<mission>_<instrument>_<datalevel>_<descriptor>_"
-            "<startdate>_<enddate>_<version>.<extension>"
-        )
+    "<mission>_<instrument>_<datalevel>_<descriptor>_"
+    "<startdate>_<enddate>_<version>.<extension>"
+)
+
+
+def extract_filename_components(filename: str | Path):
+    """
+    Extracts all components from filename. Does not validate instrument or level.
+
+    Will return a dictionary with the following keys:
+    { instrument, datalevel, descriptor, startdate, enddate, version, extension }
+
+    If a match is not found, a ValueError will be raised.
+
+    Parameters
+    ----------
+    filename : Path or str
+        Path of dependency data.
+
+    Returns
+    -------
+    components : dict
+        Dictionary containing components.
+
+    """
+    pattern = (
+        r"^imap_"
+        r"(?P<instrument>[^_]+)_"
+        r"(?P<datalevel>[^_]+)_"
+        r"(?P<descriptor>[^_]+)_"
+        r"(?P<startdate>\d{8})_"
+        r"(?P<enddate>\d{8})_"
+        r"(?P<version>v\d{2}-\d{2})"
+        r"\.(cdf|pkts)$"
+    )
+    if isinstance(filename, Path):
+        filename = filename.name
+
+    match = re.match(pattern, filename)
+    if match is None:
+        raise ValueError(f"Filename {filename} does not match expected pattern")
+
+    components = match.groupdict()
+    components["extension"] = match.group(7)
+    components["mission"] = "imap"
+    return components
+
+
+def construct_upload_path(filename: str | Path) -> str:
+    """
+    Given the filename, construct the expected upload path.
+
+    Example path: imap/mag/l1a/2021/01/imap_mag_l1a_burst_20210101_20210102_v01-01.cdf
+
+    Parameters
+    ----------
+    filename: str | Path
+        File name or path to create the path from. Should match IMAP file convention:
+        <mission>_<instrument>_<datalevel>_<descriptor>_<startdate>_<enddate>_<version>.<extension>
+
+    Returns
+    -------
+    str
+        File path generated from the filename.
+
+    """
+
+    components = extract_filename_components(filename)
+    return (
+        f"{components['mission']}/{components['instrument']}/"
+        f"{components['datalevel']}/{components['startdate'][:4]}/"
+        f"{components['startdate'][4:6]}/{filename}"
+    )
 
 
 class InvalidScienceFileError(Exception):
     """Indicates a bad file type"""
+
     pass
 
 
 class ScienceFilepathManager:
-    def __init__(self, filename: str | pathlib.Path):
+    def __init__(self, filename: str | Path):
         """Class to store file pattern
 
         Current filename convention:
@@ -55,20 +127,21 @@ class ScienceFilepathManager:
 
         Parameters
         ----------
-        filename : str | pathlib.Path
+        filename : str | Path
             Science data filename or file path.
         """
         # TODO: Accomodate path or filename
         self.filename = filename
 
         try:
-            split_filename = ScienceFilepathManager.extract_filename_components(self.filename)
+            split_filename = extract_filename_components(self.filename)
         except ValueError:
             raise InvalidScienceFileError(
                 f"Invalid filename. Expected file to match format: "
                 f"{FILENAME_CONVENTION}"
             )
 
+        self.mission = split_filename["mission"]
         self.instrument = split_filename["instrument"]
         self.data_level = split_filename["datalevel"]
         self.descriptor = split_filename["descriptor"]
@@ -82,7 +155,7 @@ class ScienceFilepathManager:
             raise InvalidScienceFileError(f"{self.error_message}")
 
     def validate_filename(self):
-        """ Validate the filename and populate the error message for wrong attributes.
+        """Validate the filename and populate the error message for wrong attributes.
 
         The error message will be an empty string if the filename is valid. Otherwise,
         all errors with the filename will be put into the error message.
@@ -98,6 +171,7 @@ class ScienceFilepathManager:
         if any(
             attr is None or attr == ""
             for attr in [
+                self.mission,
                 self.instrument,
                 self.data_level,
                 self.descriptor,
@@ -107,15 +181,25 @@ class ScienceFilepathManager:
                 self.extension,
             ]
         ):
-            error_message = f"Invalid filename, missing attribute. Filename " \
-                                 f"convention is {FILENAME_CONVENTION} \n"
+            error_message = (
+                f"Invalid filename, missing attribute. Filename "
+                f"convention is {FILENAME_CONVENTION} \n"
+            )
+        if self.mission != "imap":
+            error_message += f"Invalid mission {self.mission}. Please use imap \n"
 
         if self.instrument not in VALID_INSTRUMENTS:
-            error_message += f"Invalid instrument {self.instrument}. Please choose " \
-                             f"from " f"{VALID_INSTRUMENTS} \n"
+            error_message += (
+                f"Invalid instrument {self.instrument}. Please choose "
+                f"from "
+                f"{VALID_INSTRUMENTS} \n"
+            )
         if self.data_level not in VALID_DATALEVELS:
-            error_message += f"Invalid data level {self.data_level}. Please choose " \
-                             f"from " f"{VALID_DATALEVELS} \n"
+            error_message += (
+                f"Invalid data level {self.data_level}. Please choose "
+                f"from "
+                f"{VALID_DATALEVELS} \n"
+            )
         if not self.is_valid_date(self.startdate):
             error_message += "Invalid start date format. Please use YYYYMMDD format. \n"
         if not self.is_valid_date(self.enddate):
@@ -124,11 +208,13 @@ class ScienceFilepathManager:
             error_message += "Invalid version format. Please use vxx-xx format. \n"
 
         if self.extension not in VALID_FILE_EXTENSION or (
-                (self.data_level == "l0" and self.extension != "pkts")
-                or (self.data_level != "l0" and self.extension != "cdf")
+            (self.data_level == "l0" and self.extension != "pkts")
+            or (self.data_level != "l0" and self.extension != "cdf")
         ):
-            error_message += "Invalid extension. Extension should be pkts for data " \
-                             "level l0 and cdf for data level higher than l0 \n"
+            error_message += (
+                "Invalid extension. Extension should be pkts for data "
+                "level l0 and cdf for data level higher than l0 \n"
+            )
 
         return error_message
 
@@ -156,49 +242,7 @@ class ScienceFilepathManager:
         except ValueError:
             return False
 
-    @staticmethod
-    def extract_filename_components(filename: str | pathlib.Path):
-        """
-        Extracts all components from filename. Does not validate instrument or level.
-
-        Will return a dictionary with the following keys:
-        { instrument, datalevel, descriptor, startdate, enddate, version, extension }
-
-        If a match is not found, a ValueError will be raised.
-
-        Parameters
-        ----------
-        filename : Pathlib.Path or str
-            Path of dependency data.
-
-        Returns
-        -------
-        components : dict
-            Dictionary containing components.
-
-        """
-        pattern = (
-            r"^imap_"
-            r"(?P<instrument>[^_]+)_"
-            r"(?P<datalevel>[^_]+)_"
-            r"(?P<descriptor>[^_]+)_"
-            r"(?P<startdate>\d{8})_"
-            r"(?P<enddate>\d{8})_"
-            r"(?P<version>v\d{2}-\d{2})"
-            r"\.(cdf|pkts)$"
-        )
-        if isinstance(filename, pathlib.Path):
-            filename = filename.name
-
-        match = re.match(pattern, filename)
-        if match is None:
-            raise ValueError(f"Filename {filename} does not match expected pattern")
-
-        components = match.groupdict()
-        components["extension"] = match.group(7)
-        return components
-
-    def construct_upload_path(self):
+    def upload_path(self):
         """Construct upload path from class variables
 
         Returns
@@ -207,7 +251,7 @@ class ScienceFilepathManager:
             Upload path
         """
         upload_path = (
-            f"imap/{self.instrument}/{self.data_level}/"
+            f"{self.mission}/{self.instrument}/{self.data_level}/"
             f"{self.startdate[:4]}/{self.startdate[4:6]}/{self.filename}"
         )
 

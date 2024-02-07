@@ -48,7 +48,7 @@ def test_request_errors(mock_urlopen):
         # Directory structure inferred
         (
             "imap_test_l1_test-description_20100101_20100102_v00-00.cdf",
-            "test/l1/2010/01/imap_test_l1_test-description_20100101_20100102_v00-00.cdf",
+            "imap/test/l1/2010/01/imap_test_l1_test-description_20100101_20100102_v00-00.cdf",
         ),
         # Directory structure provided in the request
         ("imap/test/config/file.txt", "imap/test/config/file.txt"),
