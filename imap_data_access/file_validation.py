@@ -1,32 +1,11 @@
 """Methods for managing and validating filenames and filepaths"""
-import re
+from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 
-VALID_INSTRUMENTS = {
-    "codice",
-    "glows",
-    "hit",
-    "hi-45",
-    "hi-90",
-    "idex",
-    "lo",
-    "mag",
-    "swapi",
-    "swe",
-    "ultra-45",
-    "ultra-90",
-}
-
-VALID_DATALEVELS = {"l0", "l1", "l1a", "l1b", "l1c", "l1d", "l2"}
-
-VALID_FILE_EXTENSION = {"pkts", "cdf"}
-
-FILENAME_CONVENTION = (
-    "<mission>_<instrument>_<datalevel>_<descriptor>_"
-    "<startdate>_<enddate>_<version>.<extension>"
-)
+import imap_data_access
 
 
 def extract_filename_components(filename: str | Path):
@@ -50,29 +29,30 @@ def extract_filename_components(filename: str | Path):
 
     """
     pattern = (
-        r"^imap_"
+        r"^(?P<mission>imap)_"
         r"(?P<instrument>[^_]+)_"
         r"(?P<datalevel>[^_]+)_"
         r"(?P<descriptor>[^_]+)_"
         r"(?P<startdate>\d{8})_"
         r"(?P<enddate>\d{8})_"
         r"(?P<version>v\d{2}-\d{2})"
-        r"\.(cdf|pkts)$"
+        r"\.(?P<extension>cdf|pkts)$"
     )
     if isinstance(filename, Path):
         filename = filename.name
 
     match = re.match(pattern, filename)
     if match is None:
-        raise ValueError(f"Filename {filename} does not match expected pattern")
+        raise ValueError(
+            f"Filename {filename} does not match expected pattern: "
+            f"{imap_data_access.FILENAME_CONVENTION}"
+        )
 
     components = match.groupdict()
-    components["extension"] = match.group(7)
-    components["mission"] = "imap"
     return components
 
 
-def construct_upload_path(filename: str | Path) -> Path:
+def construct_path_from_filename(filename: str | Path) -> Path:
     """
     Given the filename, construct the expected upload path.
 
@@ -139,11 +119,11 @@ class ScienceFilepathManager:
 
         try:
             split_filename = extract_filename_components(self.filename)
-        except ValueError:
+        except ValueError as err:
             raise InvalidScienceFileError(
                 f"Invalid filename. Expected file to match format: "
-                f"{FILENAME_CONVENTION}"
-            )
+                f"{imap_data_access.FILENAME_CONVENTION}"
+            ) from err
 
         self.mission = split_filename["mission"]
         self.instrument = split_filename["instrument"]
@@ -187,22 +167,22 @@ class ScienceFilepathManager:
         ):
             error_message = (
                 f"Invalid filename, missing attribute. Filename "
-                f"convention is {FILENAME_CONVENTION} \n"
+                f"convention is {imap_data_access.FILENAME_CONVENTION} \n"
             )
         if self.mission != "imap":
             error_message += f"Invalid mission {self.mission}. Please use imap \n"
 
-        if self.instrument not in VALID_INSTRUMENTS:
+        if self.instrument not in imap_data_access.VALID_INSTRUMENTS:
             error_message += (
                 f"Invalid instrument {self.instrument}. Please choose "
                 f"from "
-                f"{VALID_INSTRUMENTS} \n"
+                f"{imap_data_access.VALID_INSTRUMENTS} \n"
             )
-        if self.data_level not in VALID_DATALEVELS:
+        if self.data_level not in imap_data_access.VALID_DATALEVELS:
             error_message += (
                 f"Invalid data level {self.data_level}. Please choose "
                 f"from "
-                f"{VALID_DATALEVELS} \n"
+                f"{imap_data_access.VALID_DATALEVELS} \n"
             )
         if not self.is_valid_date(self.startdate):
             error_message += "Invalid start date format. Please use YYYYMMDD format. \n"
@@ -211,7 +191,7 @@ class ScienceFilepathManager:
         if not bool(re.match(r"^v\d{2}-\d{2}$", self.version)):
             error_message += "Invalid version format. Please use vxx-xx format. \n"
 
-        if self.extension not in VALID_FILE_EXTENSION or (
+        if self.extension not in imap_data_access.VALID_FILE_EXTENSION or (
             (self.data_level == "l0" and self.extension != "pkts")
             or (self.data_level != "l0" and self.extension != "cdf")
         ):

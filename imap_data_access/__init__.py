@@ -7,10 +7,10 @@ provides a convenient way to query the IMAP data archive and download data files
 import os
 from pathlib import Path
 
+from imap_data_access.file_validation import construct_path_from_filename
 from imap_data_access.io import download, query, upload
-from imap_data_access.file_validation import construct_upload_path
 
-__all__ = ["query", "download", "upload", "construct_upload_path"]
+__all__ = ["query", "download", "upload", "construct_path_from_filename"]
 __version__ = "0.2.0"
 
 
@@ -27,3 +27,28 @@ DATA_DIR : This is where the file data is stored and organized by instrument and
     "but this can be set on the command line using the --data-dir option, or through
     the environment variable IMAP_DATA_DIR.
 """
+
+
+VALID_INSTRUMENTS = {
+    "codice",
+    "glows",
+    "hit",
+    "hi-45",
+    "hi-90",
+    "idex",
+    "lo",
+    "mag",
+    "swapi",
+    "swe",
+    "ultra-45",
+    "ultra-90",
+}
+
+VALID_DATALEVELS = {"l0", "l1", "l1a", "l1b", "l1c", "l1d", "l2"}
+
+VALID_FILE_EXTENSION = {"pkts", "cdf"}
+
+FILENAME_CONVENTION = (
+    "<mission>_<instrument>_<datalevel>_<descriptor>_"
+    "<startdate>_<enddate>_<version>.<extension>"
+)
