@@ -65,9 +65,11 @@ def download(file_path: Union[Path, str]) -> Path:
         # This is for science files that contain the directory structure in the filename
         # Otherwise, we assume the full path to the file was given
 
-        construct = imap_data_access.construct_path_from_filename(file_path)
+        science_file_path = imap_data_access.ScienceFilepath(
+            file_path, data_dir=destination
+        )
 
-        destination = destination / construct
+        destination = science_file_path.construct_path()
     else:
         destination /= file_path
 
