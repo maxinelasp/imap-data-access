@@ -7,10 +7,10 @@ provides a convenient way to query the IMAP data archive and download data files
 import os
 from pathlib import Path
 
-from imap_data_access.file_validation import ScienceFilepath
+from imap_data_access.file_validation import ScienceFilePath
 from imap_data_access.io import download, query, upload
 
-__all__ = ["query", "download", "upload", "ScienceFilepath"]
+__all__ = ["query", "download", "upload", "ScienceFilePath"]
 __version__ = "0.2.0"
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import imap_data_access
 
 
-class ScienceFilepath:
+class ScienceFilePath:
     class InvalidScienceFileError(Exception):
         """Indicates a bad file type"""
 
@@ -24,7 +24,7 @@ class ScienceFilepath:
         <mission>_<instrument>_<datalevel>_<descriptor>_<startdate>_<enddate>
         _<version>.<extension>
 
-        NOTE: There are no optional parameters anymore. All parameters are required.
+        NOTE: There are no optional parameters. All parameters are required.
         <mission>: imap
         <instrument>: idex, swe, swapi, hi-45, ultra-45 and etc.
         <datalevel> : l1a, l1b, l1, l3a and etc.
@@ -217,7 +217,7 @@ class ScienceFilepath:
 
         match = re.match(pattern, filename)
         if match is None:
-            raise ScienceFilepath.InvalidScienceFileError(
+            raise ScienceFilePath.InvalidScienceFileError(
                 f"Filename {filename} does not match expected pattern: "
                 f"{imap_data_access.FILENAME_CONVENTION}"
             )
