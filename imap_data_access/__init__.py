@@ -22,6 +22,7 @@ __all__ = [
     "VALID_FILE_EXTENSION",
     "FILENAME_CONVENTION",
 ]
+
 __version__ = "0.11.0"
 
 
