@@ -8,7 +8,11 @@ provides a convenient way to query the IMAP data archive and download data files
 import os
 from pathlib import Path
 
-from imap_data_access.file_validation import ScienceFilePath, SPICEFilePath
+from imap_data_access.file_validation import (
+    AncillaryFilePath,
+    ScienceFilePath,
+    SPICEFilePath,
+)
 from imap_data_access.io import download, query, upload
 
 __all__ = [
@@ -17,12 +21,14 @@ __all__ = [
     "upload",
     "ScienceFilePath",
     "SPICEFilePath",
+    "AncillaryFilePath",
     "VALID_INSTRUMENTS",
     "VALID_DATALEVELS",
     "VALID_FILE_EXTENSION",
     "FILENAME_CONVENTION",
 ]
-__version__ = "0.7.0"
+
+__version__ = "0.13.1"
 
 
 config = {
@@ -67,7 +73,8 @@ VALID_DATALEVELS = {
     "l1cb",
     "l1d",
     "l2",
-    "l2pre",
+    "l2a",
+    "l2b",
     "l3",
     "l3a",
     "l3b",
@@ -81,3 +88,10 @@ FILENAME_CONVENTION = (
     "<mission>_<instrument>_<datalevel>_<descriptor>_"
     "<startdate>(-<repointing>)_<version>.<extension>"
 )
+
+ANCILLARY_FILENAME_CONVENTION = (
+    "<mission>_<instrument>_<description>_"
+    "<start_date>(-<end_date>)_<version>.<extension>"
+)
+
+VALID_ANCILLARY_FILE_EXTENSION = {"cdf", "csv", "json"}

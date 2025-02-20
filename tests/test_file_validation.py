@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 import imap_data_access
-from imap_data_access.file_validation import ScienceFilePath, SPICEFilePath
+from imap_data_access.file_validation import (
+    AncillaryFilePath,
+    ScienceFilePath,
+    SPICEFilePath,
+)
 
 
 def test_extract_filename_components():
@@ -175,9 +179,47 @@ def test_spice_file_path():
     """Tests the ``SPICEFilePath`` class."""
     file_path = SPICEFilePath("test.bc")
     assert file_path.construct_path() == imap_data_access.config["DATA_DIR"] / Path(
-        "imap/spice/ck/test.bc"
+        "spice/ck/test.bc"
     )
 
     # Test a bad file extension too
     with pytest.raises(SPICEFilePath.InvalidSPICEFileError):
         SPICEFilePath("test.txt")
+
+    # Test that spin and repoint goes into their own directories
+    spin_file_path = SPICEFilePath("imap_2025_122_2025_122_01.spin.csv")
+    assert spin_file_path.construct_path() == imap_data_access.config[
+        "DATA_DIR"
+    ] / Path("spice/spin/imap_2025_122_2025_122_01.spin.csv")
+
+    repoint_file_path = SPICEFilePath("imap_2025_122_2025_122_01.repoint.csv")
+    assert repoint_file_path.construct_path() == imap_data_access.config[
+        "DATA_DIR"
+    ] / Path("spice/repoint/imap_2025_122_2025_122_01.repoint.csv")
+
+    metakernel_file = SPICEFilePath("imap_yyyy_doy_e00.mk")
+    assert metakernel_file.construct_path() == imap_data_access.config[
+        "DATA_DIR"
+    ] / Path("spice/mk/imap_yyyy_doy_e00.mk")
+
+    thruster_file = SPICEFilePath("imap_yyyy_doy_hist_00.sff")
+    assert thruster_file.construct_path() == imap_data_access.config["DATA_DIR"] / Path(
+        "spice/activities/imap_yyyy_doy_hist_00.sff"
+    )
+
+
+def test_ancillary_file_path_no_end_date():
+    """Tests the ``construct_path`` method with no end_date provided."""
+    anc_file = AncillaryFilePath.generate_from_inputs(
+        instrument="mag",
+        description="test",
+        start_time="20210101",
+        version="v001",
+        extension="cdf",
+    )
+
+    assert anc_file.validate_filename() == ""
+    expected_output = imap_data_access.config["DATA_DIR"] / Path(
+        "imap/ancillary/mag/imap_mag_test_20210101_v001.cdf"
+    )
+    assert anc_file.construct_path() == expected_output

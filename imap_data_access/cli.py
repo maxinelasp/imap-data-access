@@ -21,6 +21,7 @@ import os
 from pathlib import Path
 
 import imap_data_access
+from imap_data_access.file_validation import ScienceFilePath
 
 
 def _download_parser(args: argparse.Namespace):
@@ -47,11 +48,9 @@ def _print_query_results_table(query_results: list[dict]):
     print(f"Found [{num_files}] matching files")
     if num_files == 0:
         return
-    format_string = "{:<10}|{:<10}|{:<10}|{:<10}|{:<10}|{:<7}|{:<50}|"
-    # Add hyphens for a separator between header and data
-    hyphens = "-" * 113 + "|"
-    print(hyphens)
-    header = [
+
+    # Use the keys of the first item in query_results for the header
+    headers = [
         "Instrument",
         "Data Level",
         "Descriptor",
@@ -60,22 +59,52 @@ def _print_query_results_table(query_results: list[dict]):
         "Version",
         "Filename",
     ]
-    print(format_string.format(*header))
+
+    # Calculate the maximum width for each column based on the header and the data
+    column_widths = {}
+    for header in headers[:-1]:
+        column_widths[header] = max(
+            len(header),
+            *(len(str(item.get(header.lower(), ""))) for item in query_results),
+        )
+        # Calculate the maximum width for each column based on the header and the data
+
+        column_widths["Filename"] = max(
+            len("Filename"),
+            *(
+                len(os.path.basename(item.get("file_path", "")))
+                for item in query_results
+            ),
+        )
+
+    # Create the format string dynamically based on the number of columns
+    format_string = (
+        "| "
+        + " | ".join([f"{{:<{column_widths[header]}}}" for header in headers])
+        + " |"
+    )
+
+    # Add hyphens for a separator between header and data
+    hyphens = "|" + "-" * (sum(column_widths.values()) + 3 * len(headers) - 1) + "|"
+    print(hyphens)
+
+    # Print header
+    print(format_string.format(*headers))
     print(hyphens)
 
     # Print data
     for item in query_results:
         values = [
-            item["instrument"],
-            item["data_level"],
-            item["descriptor"],
-            item["start_date"],
-            # Repointing is optional, so use an empty string if not present
-            item["repointing"] or "",
-            item["version"],
-            os.path.basename(item["file_path"]),
+            str(item.get("instrument", "")),
+            str(item.get("data_level", "")),
+            str(item.get("descriptor", "")),
+            str(item.get("start_date", "")),
+            str(item.get("repointing", "")) or "",
+            str(item.get("version", "")),
+            os.path.basename(item.get("file_path", "")),
         ]
         print(format_string.format(*values))
+
     # Close the table
     print(hyphens)
 
@@ -98,12 +127,32 @@ def _query_parser(args: argparse.Namespace):
         "repointing",
         "version",
         "extension",
+        "filename",
     ]
+
     query_params = {
         key: value
         for key, value in vars(args).items()
         if key in valid_args and value is not None
     }
+
+    # Checking to see if a filename was passed.
+    if args.filename is not None:
+        del query_params["filename"]
+        if query_params:
+            raise TypeError("Too many arguments, '--filename' should be ran by itself")
+
+        file_path = ScienceFilePath(args.filename)
+        query_params = {
+            "instrument": file_path.instrument,
+            "data_level": file_path.data_level,
+            "descriptor": file_path.descriptor,
+            "start_date": file_path.start_date,
+            "repointing": file_path.repointing,
+            "version": file_path.version,
+            "extension": file_path.extension,
+        }
+
     query_results = imap_data_access.query(**query_params)
 
     if args.output_format == "table":
@@ -125,7 +174,8 @@ def _upload_parser(args: argparse.Namespace):
     print("Successfully uploaded the file to the IMAP SDC")
 
 
-def main():
+# PLR0915: too many statements
+def main():  # noqa: PLR0915
     """Parse the command line arguments.
 
     Run the command line interface to the IMAP Data Access API.
@@ -147,6 +197,10 @@ def main():
     )
     download_help = (
         "Download a file from the IMAP SDC to the locally configured data directory. "
+        "Run 'download -h' for more information. "
+    )
+    help_menu_for_download = (
+        "Download a file from the IMAP SDC to the locally configured data directory. "
     )
     file_path_help = (
         "This must be the full path to the file."
@@ -154,11 +208,21 @@ def main():
     )
     query_help = (
         "Query the IMAP SDC for files matching the query parameters. "
-        "The query parameters are optional, but at least one must be provided."
+        "The query parameters are optional, but at least one must be provided. "
+        "Run 'query -h' for more information."
+    )
+    help_menu_for_query = (
+        "Query the IMAP SDC for files matching the query parameters. "
+        "The query parameters are optional, but at least one must be provided. "
     )
     upload_help = (
         "Upload a file to the IMAP SDC. This must be the full path to the file."
-        "\nE.g. imap/mag/l0/2025/01/imap_mag_l0_raw_20250101_v001.pkts"
+        "\nE.g. imap/mag/l0/2025/01/imap_mag_l0_raw_20250101_v001.pkts. "
+        "Run 'upload -h' for more information."
+    )
+    help_menu_for_upload = (
+        "Upload a file to the IMAP SDC. This must be the full path to the file."
+        "\nE.g. imap/mag/l0/2025/01/imap_mag_l0_raw_20250101_v001.pkts. "
     )
     url_help = (
         "URL of the IMAP SDC API. "
@@ -171,6 +235,7 @@ def main():
         "--version",
         action="version",
         version=f"%(prog)s {imap_data_access.__version__}",
+        help="Show programs version number and exit. No other parameters needed.",
     )
     parser.add_argument("--api-key", type=str, required=False, help=api_key_help)
     parser.add_argument("--data-dir", type=Path, required=False, help=data_dir_help)
@@ -178,7 +243,7 @@ def main():
     # Logging level
     parser.add_argument(
         "--debug",
-        help="Print lots of debugging statements",
+        help="Print lots of debugging statements.",
         action="store_const",
         dest="loglevel",
         const=logging.DEBUG,
@@ -196,14 +261,14 @@ def main():
     # Download command
     subparsers = parser.add_subparsers(required=True)
     parser_download = subparsers.add_parser(
-        "download", help=download_help, description=download_help
+        "download", help=download_help, description=help_menu_for_download
     )
     parser_download.add_argument("file_path", type=Path, help=file_path_help)
     parser_download.set_defaults(func=_download_parser)
 
     # Query command (with optional arguments)
     query_parser = subparsers.add_parser(
-        "query", help=query_help, description=query_help
+        "query", help=query_help, description=help_menu_for_query
     )
     query_parser.add_argument(
         "--instrument",
@@ -236,10 +301,16 @@ def main():
         help="Descriptor of the product (raw, burst, etc.)",
     )
     query_parser.add_argument(
-        "--start-date", type=str, required=False, help="Start date in YYYYMMDD format"
+        "--start-date",
+        type=str,
+        required=False,
+        help="Start date for files in YYYYMMDD format",
     )
     query_parser.add_argument(
-        "--end-date", type=str, required=False, help="End date in YYYYMMDD format"
+        "--end-date",
+        type=str,
+        required=False,
+        help="End date for a range of file timestamps in YYYYMMDD format",
     )
     query_parser.add_argument(
         "--repointing", type=int, required=False, help="Repointing number (int)"
@@ -248,7 +319,9 @@ def main():
         "--version",
         type=str,
         required=False,
-        help="Version of the product in the format 'v001'",
+        help="Version of the product in the format 'v001'."
+        " Must have one other parameter to run."
+        " Passing 'latest' will return latest version of a file",
     )
     query_parser.add_argument(
         "--extension", type=str, required=False, help="File extension (cdf, pkts)"
@@ -261,17 +334,33 @@ def main():
         choices=["table", "json"],
         default="table",
     )
+    query_parser.add_argument(
+        "--filename",
+        type=str,
+        required=False,
+        help="Name of a file to be searched for. For convention standards see https://imap-"
+        "processing.readthedocs.io/en/latest/development-guide/style-guide/naming-conventions"
+        ".html#data-product-file-naming-conventions",
+    )
     query_parser.set_defaults(func=_query_parser)
 
     # Upload command
     parser_upload = subparsers.add_parser(
-        "upload", help=upload_help, description=upload_help
+        "upload", help=upload_help, description=help_menu_for_upload
     )
     parser_upload.add_argument("file_path", type=Path, help=file_path_help)
     parser_upload.set_defaults(func=_upload_parser)
 
     # Parse the arguments and set the values
-    args = parser.parse_args()
+    try:
+        args = parser.parse_args()
+    except TypeError:
+        parser.exit(
+            status=1,
+            message="Please provide input parameters, "
+            "or use '-h' for more information.",
+        )
+
     logging.basicConfig(level=args.loglevel)
 
     if args.data_dir:
