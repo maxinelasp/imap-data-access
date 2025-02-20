@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-from imap_data_access import ScienceFilePath
+from imap_data_access import ScienceFilePath, AncillaryFilePath, SPICEFilePath
 
 
 class ProcessingInputType(Enum):
@@ -13,10 +13,17 @@ class ProcessingInputType(Enum):
     SPICE_FILE = "spice"
 
 
+class InputTypePathMapper(Enum):
+    SCIENCE_FILE = ScienceFilePath
+    ANCILLARY_FILE = AncillaryFilePath
+    SPICE_FILE = SPICEFilePath
+
+
 class InputFileDescription:
     filepath: str
     type: ProcessingInputType
 
+    # TODO: keep filepath?
     def __init__(self, filepath: str, type: ProcessingInputType):
         self.filepath = filepath
         self.type = type
@@ -66,9 +73,29 @@ class ProcessingInput(ABC):
     def get_time_range(self):
         raise NotImplementedError
 
-    @abstractmethod
     def _set_attributes_from_filenames(self):
-        raise NotImplementedError
+        source = set()
+        data_type = set()
+        descriptor = set()
+        science_file_paths = []
+        for file in self.filepath_list:
+            path_validator = InputTypePathMapper[self.input_type.name].value(file)
+            print(path_validator)
+            # science_file_path = ScienceFilePath(file)
+
+            source.add(path_validator.instrument)
+            data_type.add(path_validator.data_level)
+            descriptor.add(path_validator.descriptor)
+            science_file_paths.append(path_validator)
+
+        if len(source) != 1 or len(data_type) != 1 or len(descriptor) != 1:
+            raise ValueError(
+                "All files must have the same source, data type, and descriptor.")
+
+        self.source = source.pop()
+        self.data_type = data_type.pop()
+        self.descriptor = descriptor.pop()
+        self.science_file_paths = science_file_paths
 
     @abstractmethod
     def construct_json_output(self):
@@ -87,30 +114,8 @@ class ScienceInput(ProcessingInput):
     science_file_paths: list[ScienceFilePath] = None
 
     def __init__(self, *args):
-        super().__init__(*args)
         self.input_type = ProcessingInputType.SCIENCE_FILE
-
-    def _set_attributes_from_filenames(self):
-        # Each type of file can have different attributes.
-        source = set()
-        data_type = set()
-        descriptor = set()
-        science_file_paths = []
-        for file in self.filepath_list:
-            science_file_path = ScienceFilePath(file)
-
-            source.add(science_file_path.instrument)
-            data_type.add(science_file_path.data_level)
-            descriptor.add(science_file_path.descriptor)
-            science_file_paths.append(science_file_path)
-
-        if len(source) != 1 or len(data_type) != 1 or len(descriptor) != 1:
-            raise ValueError("All files must have the same source, data type, and descriptor.")
-
-        self.source = source.pop()
-        self.data_type = data_type.pop()
-        self.descriptor = descriptor.pop()
-        self.science_file_paths = science_file_paths
+        super().__init__(*args)
 
     def get_time_range(self) -> tuple:
         pass

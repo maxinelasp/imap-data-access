@@ -3,8 +3,6 @@ import processing_input_file
 
 # In the dependency resolution phase, we collect some information on ancillary files
 
-
-
 science_file_1 = processing_input_file.ScienceInput("imap_mag_l1a_norm-magi_20240312_v000.cdf", "imap_mag_l1a_norm-magi_20240310_v000.cdf")
 # ancillary_files = processing_input_file.AncillaryInput()
 print(science_file_1)
