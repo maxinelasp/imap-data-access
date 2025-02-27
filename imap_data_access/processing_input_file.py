@@ -1,22 +1,27 @@
+"""Class for abstracting and organizing collections of input files."""
+
 from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from typing import Optional
 
-from imap_data_access import ScienceFilePath, AncillaryFilePath, SPICEFilePath
+from imap_data_access import AncillaryFilePath, ScienceFilePath, SPICEFilePath
 
 
 class ProcessingInputType(Enum):
+    """Enum matching types of ProcessingInputs to output strings describing them."""
+
     SCIENCE_FILE = "science"
     ANCILLARY_FILE = "ancillary"
     SPICE_FILE = "spice"
 
 
 class InputTypePathMapper(Enum):
+    """Enum matching ProcessingInput names to classes."""
+
     SCIENCE_FILE = ScienceFilePath
     ANCILLARY_FILE = AncillaryFilePath
     SPICE_FILE = SPICEFilePath
@@ -24,8 +29,7 @@ class InputTypePathMapper(Enum):
 
 @dataclass
 class ProcessingInput(ABC):
-    """
-    Interface for input file management and serialization.
+    """Interface for input file management and serialization.
 
     ProcessingInput is an abstract class that is used to manage input files for
     processing. Any kind of input file can create an Input class which inherits from
@@ -35,7 +39,7 @@ class ProcessingInput(ABC):
     Each instance of the Input class can contain multiple files that have the same
     source, data type, and descriptor, but which may cover a wide time range.
 
-     Attributes
+    Attributes
     ----------
     filepath_list : list[str]
         A list of filepaths.
@@ -48,7 +52,8 @@ class ProcessingInput(ABC):
         The type of data, for example, "l1a" or "l1b" or "predict".
     descriptor : str
         A descriptor for the file, for example, "burst" or "cal".
-     """
+    """
+
     filename_list: list[str] = None
     input_type: ProcessingInputType = None
     # Following three are retrieved from dependency check.
@@ -58,12 +63,12 @@ class ProcessingInput(ABC):
     descriptor: str = field(init=False)
 
     def __init__(self, *args):
-        """
-        Takes in a list of filepaths and sets the attributes of the class.
+        """Initialize using a list of filepaths and sets the attributes of the class.
 
         This method works for ScienceFilePaths and AncillaryFilePaths. Subclasses
         should set self.input_type to the appropriate ProcessingInputType before
         calling this method.
+
         Parameters
         ----------
         args: str
@@ -80,9 +85,10 @@ class ProcessingInput(ABC):
 
     @abstractmethod
     def get_time_range(self):
-        """
-        Describes the time range covered by the files. Should return a tuple with
-        (start_date, end_date). All datapoints in the file should fall within the range,
+        """Describe the time range covered by the files.
+
+        Should return a tuple with (start_date, end_date).
+         All datapoints in the file should fall within the range,
         inclusive (so ranging from midnight on start_date to midnight on end_date+1).
 
         Abstract method that is overridden for each file type.
@@ -95,8 +101,7 @@ class ProcessingInput(ABC):
         raise NotImplementedError
 
     def _set_attributes_from_filenames(self):
-        """
-        Sets the source, data type, and descriptor attributes based on the filenames.
+        """Set the source, data type, and descriptor attributes based on the filenames.
 
         This method is called by the constructor and can be overridden by subclasses.
         It works for ScienceFilePaths and AncillaryFilePaths, but not SPICEFilePaths.
@@ -121,7 +126,8 @@ class ProcessingInput(ABC):
 
         if len(source) != 1 or len(data_type) != 1 or len(descriptor) != 1:
             raise ValueError(
-                "All files must have the same source, data type, and descriptor.")
+                "All files must have the same source, data type, and descriptor."
+            )
 
         self.source = source.pop()
         self.data_type = data_type.pop()
@@ -129,21 +135,16 @@ class ProcessingInput(ABC):
         self.file_path_list = file_path_list
 
     def construct_json_output(self):
-        """
-        Constructs a JSON output.
+        """Construct a JSON output.
 
         This contains the minimum information needed to construct an identical
         ProcessingInput instance (input_type and filename)
-        Returns
-        -------
-
         """
         return {"type": self.input_type.value, "files": self.filename_list}
 
 
 class ScienceInput(ProcessingInput):
-    """
-    Science file subclass for ProcessingInput.
+    """Science file subclass for ProcessingInput.
 
     The class can contain multiple files, but they must have the same source, data type,
      and descriptor.
@@ -152,18 +153,32 @@ class ScienceInput(ProcessingInput):
     ----------
     science_file_paths : list[ScienceFilePath]
         A list of ScienceFilePath objects.
-
-
-
     """
+
     science_file_paths: list[ScienceFilePath] = None
 
     def __init__(self, *args):
+        """Set the processing type to ScienceFile and then calls super().
+
+        Parameters
+        ----------
+        args : str
+            Filenames for initialization.
+        """
         self.input_type = ProcessingInputType.SCIENCE_FILE
         super().__init__(*args)
 
     def get_time_range(self):
-        # Returns a tuple with earliest,latest.
+        """Retrieve the time range covered by the files.
+
+        Files are assumed to cover exactly 24 hours. The range returned is (earliest,
+        latest) where latest is inclusive.
+
+        Returns
+        -------
+        (earlist, latest) : tuple[datetime]
+        Tuple of datetimes describing the range of the files.
+        """
         # TODO: Add repointing time calculation here
         # files are currently assumed to cover exactly 24 hours.
         earliest = None
@@ -179,19 +194,37 @@ class ScienceInput(ProcessingInput):
 
 
 class AncillaryInput(ProcessingInput):
-    """
-    Ancillary file subclass for ProcessingInput.
+    """Ancillary file subclass for ProcessingInput.
 
     The class can contain multiple files, but they must have the same source, data type,
     and descriptor.
     """
+
     # Can contain multiple ancillary files - should have the same descriptor
     def __init__(self, *args):
+        """Set the processing type to AncillaryFile and then calls super().
+
+        Parameters
+        ----------
+        args : str
+            Filenames for initialization.
+
+        """
         self.input_type = ProcessingInputType.ANCILLARY_FILE
         super().__init__(*args)
 
     def get_time_range(self):
-        # I think we will want the time range of all the filenames here.
+        """Return the time range covered by the ancillary files.
+
+        The return is a tuple (earliest, latest) where latest is inclusive.
+        For example, a single file with a time range of 20250101-20250105 would return
+        (20250101, 20250105).
+
+        Returns
+        -------
+        (earlist, latest) : tuple[datetime]
+            A tuple of earliest, latest describing the time range across all files.
+        """
         earliest = None
         latest = None
         for file in self.filename_list:
@@ -210,8 +243,7 @@ class AncillaryInput(ProcessingInput):
         return earliest, latest
 
     def get_file_for_time(self, day):
-        """
-        Given a single time or day, return the files that are required for coverage.
+        """Given a single time or day, return the files that are required for coverage.
 
         This will take all the files that are valid for that timestamp, and select only
         the highest version of the file.
@@ -220,6 +252,7 @@ class AncillaryInput(ProcessingInput):
         ----------
         day: datetime
             Input day to retrieve files for
+
         Returns
         -------
         list[str]
@@ -230,14 +263,24 @@ class AncillaryInput(ProcessingInput):
 
 
 class SpiceInput(ProcessingInput):
-    """
-    SPICE file subclass for ProcessingInput.
-    """
-    def _set_attributes_from_filenames(self):
+    """SPICE file subclass for ProcessingInput."""
+
+    def __init__(self, *args) -> None:
+        """Initialize the attributes from the SPICE file name.
+
+        Not completed.
+
+        Parameters
+        ----------
+        args : str
+            Input SPICE filenames.
         """
-        Sets the source, data type, and descriptor attributes based on the SPICE
-        filename.
-        """
+        self.input_type = ProcessingInputType.SPICE_FILE
+        # Not yet completed
+        raise NotImplementedError
+
+    def _set_attributes_from_filenames(self) -> None:
+        """Set the source, data type, and descriptor attributes based on filename."""
         # TODO: update SPICEFilePath to retrieve data_type and descriptor from
         # file name. Do we have an expected filename format?
 
@@ -247,13 +290,13 @@ class SpiceInput(ProcessingInput):
         self.descriptor = "predict"
 
     def get_time_range(self):
+        """Not yet complete."""
         pass
 
 
 @dataclass
 class ProcessingInputCollection:
-    """
-    Collection of ProcessingInput objects.
+    """Describe a collection of ProcessingInput objects.
 
     This can be used to organize a set of ProcessingInput objects, which can then fully
     describe all the required inputs to a processing step.
@@ -266,11 +309,11 @@ class ProcessingInputCollection:
     processing_input : list[ProcessingInput]
         A list of ProcessingInput objects.
     """
+
     processing_input: list[ProcessingInput]
 
-    def __init__(self, processing_inputs: Optional[list[ProcessingInput]] = None) -> None:
-        """
-        Initialize the collection with the inputs.
+    def __init__(self, processing_inputs: list[ProcessingInput] | None = None) -> None:
+        """Initialize the collection with the inputs.
 
         Parameters
         ----------
@@ -283,8 +326,7 @@ class ProcessingInputCollection:
             self.processing_input = processing_inputs
 
     def add(self, processing_inputs: list | ProcessingInput) -> None:
-        """
-        Add a ProcessingInput or list of processing inputs to the collection.
+        """Add a ProcessingInput or list of processing inputs to the collection.
 
         Parameters
         ----------
@@ -297,8 +339,7 @@ class ProcessingInputCollection:
             self.processing_input.append(processing_inputs)
 
     def serialize(self) -> str:
-        """
-        Converts the collection to a JSON string.
+        """Convert the collection to a JSON string.
 
         Returns
         -------
@@ -312,8 +353,7 @@ class ProcessingInputCollection:
         return json.dumps(json_out)
 
     def deserialize(self, json_input: str) -> None:
-        """
-        Deserialize JSON into the collection of ProcessingInput instances.
+        """Deserialize JSON into the collection of ProcessingInput instances.
 
         Parameters
         ----------
@@ -332,8 +372,7 @@ class ProcessingInputCollection:
                 self.processing_input.append(SpiceInput(*file_creator["path"]))
 
     def get_science_files(self) -> list[ProcessingInput]:
-        """
-        Return just the science files from the collection.
+        """Return just the science files from the collection.
 
         Returns
         -------
