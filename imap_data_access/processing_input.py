@@ -122,7 +122,7 @@ class ProcessingInput(ABC):
             else:
                 data_type.add(self.input_type.value)
             descriptor.add(path_validator.descriptor)
-            file_path_list.append(path_validator)
+            file_path_list.append(str(path_validator.filename))
 
         if len(source) != 1 or len(data_type) != 1 or len(descriptor) != 1:
             raise ValueError(
@@ -262,7 +262,7 @@ class AncillaryInput(ProcessingInput):
         return NotImplementedError
 
 
-class SpiceInput(ProcessingInput):
+class SPICEInput(ProcessingInput):
     """SPICE file subclass for ProcessingInput."""
 
     def __init__(self, *args) -> None:
@@ -312,18 +312,17 @@ class ProcessingInputCollection:
 
     processing_input: list[ProcessingInput]
 
-    def __init__(self, processing_inputs: list[ProcessingInput] | None = None) -> None:
+    def __init__(self, *args: ProcessingInput) -> None:
         """Initialize the collection with the inputs.
 
         Parameters
         ----------
-        processing_inputs : Optional[list]
-            A list of ProcessingInput objects to add to the collection.
+        args : ProcessingInput
+            ProcessingInput objects to add to the collection. May be empty.
         """
-        if processing_inputs is None:
-            self.processing_input = []
-        else:
-            self.processing_input = processing_inputs
+        self.processing_input = []
+        for processing_input in args:
+            self.add(processing_input)
 
     def add(self, processing_inputs: list | ProcessingInput) -> None:
         """Add a ProcessingInput or list of processing inputs to the collection.
@@ -361,22 +360,21 @@ class ProcessingInputCollection:
             JSON input matching the output of ProcessingInputCollection.serialize()
         """
         full_input = json.loads(json_input)
-        self.processing_input = []
 
         for file_creator in full_input:
             if file_creator["type"] == ProcessingInputType.SCIENCE_FILE.value:
-                self.processing_input.append(ScienceInput(*file_creator["path"]))
+                self.add(ScienceInput(*file_creator["files"]))
             elif file_creator["type"] == ProcessingInputType.ANCILLARY_FILE.value:
-                self.processing_input.append(AncillaryInput(*file_creator["path"]))
+                self.add(AncillaryInput(*file_creator["files"]))
             elif file_creator["type"] == ProcessingInputType.SPICE_FILE.value:
-                self.processing_input.append(SpiceInput(*file_creator["path"]))
+                self.add(SPICEInput(*file_creator["files"]))
 
     def get_science_files(self) -> list[ProcessingInput]:
         """Return just the science files from the collection.
 
         Returns
         -------
-        out : list[ScienceInput]
+        out : list[ProcessingInput]
             list of ScienceInput files contained in the collection.
         """
         out = []
