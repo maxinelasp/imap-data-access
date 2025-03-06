@@ -171,26 +171,26 @@ class ScienceInput(ProcessingInput):
     def get_time_range(self):
         """Retrieve the time range covered by the files.
 
-        Files are assumed to cover exactly 24 hours. The range returned is (earliest,
-        latest) where latest is inclusive.
+        Files are assumed to cover exactly 24 hours. The range returned is (start_time,
+        end_time) where end_time is inclusive.
 
         Returns
         -------
-        (earlist, latest) : tuple[datetime]
+        (start_time, end_time) : tuple[datetime]
         Tuple of datetimes describing the range of the files.
         """
         # TODO: Add repointing time calculation here
         # files are currently assumed to cover exactly 24 hours.
-        earliest = None
-        latest = None
+        start_time = None
+        end_time = None
         for file in self.filename_list:
             filepath = ScienceFilePath(file)
             date = datetime.strptime(filepath.start_date, "%Y%m%d")
-            if earliest is None or date < earliest:
-                earliest = date
-            if latest is None or date > latest:
-                latest = date
-        return earliest, latest
+            if start_time is None or date < start_time:
+                start_time = date
+            if end_time is None or date > end_time:
+                end_time = date
+        return start_time, end_time
 
 
 class AncillaryInput(ProcessingInput):
@@ -216,17 +216,17 @@ class AncillaryInput(ProcessingInput):
     def get_time_range(self):
         """Return the time range covered by the ancillary files.
 
-        The return is a tuple (earliest, latest) where latest is inclusive.
+        The return is a tuple (start_time, end_time) where end_time is inclusive.
         For example, a single file with a time range of 20250101-20250105 would return
         (20250101, 20250105).
 
         Returns
         -------
-        (earlist, latest) : tuple[datetime]
-            A tuple of earliest, latest describing the time range across all files.
+        (start_time, end_time) : tuple[datetime]
+            A tuple of earliest, end_time describing the time range across all files.
         """
-        earliest = None
-        latest = None
+        start_time = None
+        end_time = None
         for file in self.filename_list:
             filepath = AncillaryFilePath(file)
             startdate = datetime.strptime(filepath.start_date, "%Y%m%d")
@@ -235,12 +235,12 @@ class AncillaryInput(ProcessingInput):
             else:
                 enddate = startdate
 
-            if earliest is None or startdate < earliest:
-                earliest = startdate
-            if latest is None or enddate > latest:
-                latest = enddate
+            if start_time is None or startdate < start_time:
+                start_time = startdate
+            if end_time is None or enddate > end_time:
+                end_time = enddate
 
-        return earliest, latest
+        return start_time, end_time
 
     def get_file_for_time(self, day):
         """Given a single time or day, return the files that are required for coverage.
