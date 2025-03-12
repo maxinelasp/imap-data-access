@@ -199,8 +199,9 @@ def query(
         raise ValueError("Not a valid version, use format 'vXXX'.")
 
     # check repointing follows 'repoint00000' format
-    if repointing is not None and not file_validation.ImapFilePath.is_valid_repointing(
-        repointing
+    if (
+        repointing is not None
+        and not file_validation.ScienceFilePath.is_valid_repointing(repointing)
     ):
         raise ValueError(
             "Not a valid repointing, use format repoint<num>,"

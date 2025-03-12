@@ -41,7 +41,7 @@ def generate_imap_file_path(filename: str) -> ImapFilePath:
                 # Matches neither file format
                 error_message = (
                     f"Invalid file type for {filename}. It does not match"
-                    f" Science or Ancillary file formats"
+                    f"Spice, Science or Ancillary file formats"
                 )
                 raise ValueError(error_message) from e
 
@@ -93,22 +93,6 @@ class ImapFilePath:
             Whether input version is valid or not.
         """
         return input_version == "latest" or re.fullmatch(r"v\d{3}", input_version)
-
-    @staticmethod
-    def is_valid_repointing(input_repointing: str) -> bool:
-        """Check input repointing string is in valid format 'repointingXXXXX'.
-
-        Parameters
-        ----------
-        input_repointing : str
-            Repointing to be checked.
-
-        Returns
-        -------
-        bool
-            Whether input repointing is valid or not.
-        """
-        return re.fullmatch(r"repoint\d{5}", str(input_repointing))
 
     @abstractmethod
     def construct_path(self) -> Path:
@@ -360,6 +344,22 @@ class ScienceFilePath(ImapFilePath):
             components["repointing"] = int(components["repointing"])
         return components
 
+    @staticmethod
+    def is_valid_repointing(input_repointing: str) -> bool:
+        """Check input repointing string is in valid format 'repointingXXXXX'.
+
+        Parameters
+        ----------
+        input_repointing : str
+            Repointing to be checked.
+
+        Returns
+        -------
+        bool
+            Whether input repointing is valid or not.
+        """
+        return re.fullmatch(r"repoint\d{5}", str(input_repointing))
+
 
 # Transform the suffix to the directory structure we are using
 # Commented out mappings are not being used on IMAP
@@ -589,7 +589,7 @@ class AncillaryFilePath(ImapFilePath):
         ):
             error_message = (
                 f"Invalid filename, missing attribute. Filename "
-                f"convention is {imap_data_access.FILENAME_CONVENTION} \n"
+                f"convention is {imap_data_access.ANCILLARY_FILENAME_CONVENTION} \n"
             )
         if self.mission != "imap":
             error_message += f"Invalid mission {self.mission}. Please use imap \n"
