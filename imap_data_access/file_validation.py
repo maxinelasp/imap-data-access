@@ -4,13 +4,119 @@
 from __future__ import annotations
 
 import re
+from abc import abstractmethod
 from datetime import datetime
 from pathlib import Path
 
 import imap_data_access
 
 
-class ScienceFilePath:
+def generate_imap_file_path(filename: str) -> ImapFilePath:
+    """Generate an ImapFilePath object from a filename.
+
+    This method determines if the filename is a SPICE, Science, or Ancillary file and
+    returns a SPICEFilePath, ScienceFilePath, or AncillaryFilePath object respectively.
+
+    Parameters
+    ----------
+    filename : str
+        The filename to generate a path for.
+
+    Returns
+    -------
+    A FilePath object
+    """
+    try:
+        # SPICE
+        path_obj = imap_data_access.SPICEFilePath(filename)
+    except SPICEFilePath.InvalidSPICEFileError:
+        # Science and Ancillary
+        try:
+            path_obj = imap_data_access.ScienceFilePath(filename)
+        except ScienceFilePath.InvalidScienceFileError:
+            # If Science file fails, then process as an Ancillary file
+            try:
+                path_obj = imap_data_access.AncillaryFilePath(filename)
+            except AncillaryFilePath.InvalidAncillaryFileError as e:
+                # Matches neither file format
+                error_message = (
+                    f"Invalid file type for {filename}. It does not match"
+                    f" Science or Ancillary file formats"
+                )
+                raise ValueError(error_message) from e
+
+    return path_obj
+
+
+class ImapFilePath:
+    """Base class for FilePaths.
+
+    Includes shared static methods and provides correct typing for ScienceFilePath,
+    AncillaryFilePath, and SPICEFilePath.
+    """
+
+    @staticmethod
+    def is_valid_date(input_date: str) -> bool:
+        """Check input date string is in valid format and is correct date.
+
+        Parameters
+        ----------
+        input_date : str
+            Date in YYYYMMDD format.
+
+        Returns
+        -------
+        bool
+            Whether date input is valid or not
+        """
+        # Validate if it's a real date
+        try:
+            # This checks if date is in YYYYMMDD format.
+            # Sometimes, date is correct but not in the format we want
+            datetime.strptime(input_date, "%Y%m%d")
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def is_valid_version(input_version: str) -> bool:
+        """Check input version string is in valid format 'vXXX' or 'latest'.
+
+        Parameters
+        ----------
+        input_version : str
+            Version to be checked.
+
+        Returns
+        -------
+        bool
+            Whether input version is valid or not.
+        """
+        return input_version == "latest" or re.fullmatch(r"v\d{3}", input_version)
+
+    @staticmethod
+    def is_valid_repointing(input_repointing: str) -> bool:
+        """Check input repointing string is in valid format 'repointingXXXXX'.
+
+        Parameters
+        ----------
+        input_repointing : str
+            Repointing to be checked.
+
+        Returns
+        -------
+        bool
+            Whether input repointing is valid or not.
+        """
+        return re.fullmatch(r"repoint\d{5}", str(input_repointing))
+
+    @abstractmethod
+    def construct_path(self) -> Path:
+        """Construct valid path from class variables and data_dir."""
+        raise NotImplementedError
+
+
+class ScienceFilePath(ImapFilePath):
     """Class for building and validating filepaths for science files."""
 
     class InvalidScienceFileError(Exception):
@@ -184,61 +290,6 @@ class ScienceFilePath:
 
         return error_message
 
-    @staticmethod
-    def is_valid_date(input_date: str) -> bool:
-        """Check input date string is in valid format and is correct date.
-
-        Parameters
-        ----------
-        input_date : str
-            Date in YYYYMMDD format.
-
-        Returns
-        -------
-        bool
-            Whether date input is valid or not
-        """
-        # Validate if it's a real date
-        try:
-            # This checks if date is in YYYYMMDD format.
-            # Sometimes, date is correct but not in the format we want
-            datetime.strptime(input_date, "%Y%m%d")
-            return True
-        except ValueError:
-            return False
-
-    @staticmethod
-    def is_valid_version(input_version: str) -> bool:
-        """Check input version string is in valid format 'vXXX' or 'latest'.
-
-        Parameters
-        ----------
-        input_version : str
-            Version to be checked.
-
-        Returns
-        -------
-        bool
-            Whether input version is valid or not.
-        """
-        return input_version == "latest" or re.fullmatch(r"v\d{3}", input_version)
-
-    @staticmethod
-    def is_valid_repointing(input_repointing: str) -> bool:
-        """Check input repointing string is in valid format 'repointingXXXXX'.
-
-        Parameters
-        ----------
-        input_repointing : str
-            Repointing to be checked.
-
-        Returns
-        -------
-        bool
-            Whether input repointing is valid or not.
-        """
-        return re.fullmatch(r"repoint\d{5}", str(input_repointing))
-
     def construct_path(self) -> Path:
         """Construct valid path from class variables and data_dir.
 
@@ -346,7 +397,7 @@ https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/req/kernel.html
 """
 
 
-class SPICEFilePath:
+class SPICEFilePath(ImapFilePath):
     """Class for building and validating filepaths for SPICE files."""
 
     class InvalidSPICEFileError(Exception):
@@ -399,7 +450,7 @@ class SPICEFilePath:
         return spice_dir / subdir / self.filename
 
 
-class AncillaryFilePath(ScienceFilePath):
+class AncillaryFilePath(ImapFilePath):
     """Class for building and validating filepaths for Ancillary files."""
 
     class InvalidAncillaryFileError(Exception):
