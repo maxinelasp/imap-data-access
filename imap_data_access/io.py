@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 
 import imap_data_access
 from imap_data_access import file_validation
+from imap_data_access.file_validation import generate_imap_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -68,30 +69,9 @@ def download(file_path: Union[Path, str]) -> Path:
     pathlib.Path
         Path to the downloaded file
     """
-    destination = imap_data_access.config["DATA_DIR"]
     # Create the proper file path object based on the extension and filename
     file_path = Path(file_path)
-    if file_path.suffix in imap_data_access.file_validation._SPICE_DIR_MAPPING:
-        # SPICE
-        path_obj = imap_data_access.SPICEFilePath(file_path.name)
-    else:
-        # Science and Ancillary
-        try:
-            path_obj = imap_data_access.ScienceFilePath(file_path.name)
-            logger.debug("Science file found: %s", path_obj.filename)
-        except imap_data_access.ScienceFilePath.InvalidScienceFileError:
-            # If Science file fails, then process as an Ancillary file
-            try:
-                path_obj = imap_data_access.AncillaryFilePath(file_path.name)
-                logger.debug("Ancillary file found: %s", path_obj.filename)
-            except imap_data_access.AncillaryFilePath.InvalidAncillaryFileError as e:
-                # Matches neither file format
-                error_message = (
-                    f"Invalid file type for {file_path}. It does not match"
-                    f" Science or Ancillary file formats"
-                )
-                logger.error(error_message)
-                raise ValueError(error_message) from e
+    path_obj = generate_imap_file_path(file_path.name)
 
     destination = path_obj.construct_path()
 
@@ -131,7 +111,7 @@ def query(
     descriptor: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    repointing: Optional[int] = None,
+    repointing: Optional[str] = None,
     version: Optional[str] = None,
     extension: Optional[str] = None,
 ) -> list[dict[str, str]]:
@@ -156,8 +136,8 @@ def query(
     end_date : str, optional
         End date in YYYYMMDD format. Note this is to search for all files
         with start dates before the requested end_date.
-    repointing : int, optional
-        Repointing number
+    repointing : str, optional
+        Repointing string, in the format 'repoint00000'
     version : str, optional
         Data version in the format ``vXXX`` or 'latest'.
     extension : str, optional
@@ -201,19 +181,19 @@ def query(
         )
 
     # Check start-date
-    if start_date is not None and not file_validation.ScienceFilePath.is_valid_date(
+    if start_date is not None and not file_validation.ImapFilePath.is_valid_date(
         start_date
     ):
         raise ValueError("Not a valid start date, use format 'YYYYMMDD'.")
 
     # Check end-date
-    if end_date is not None and not file_validation.ScienceFilePath.is_valid_date(
+    if end_date is not None and not file_validation.ImapFilePath.is_valid_date(
         end_date
     ):
         raise ValueError("Not a valid end date, use format 'YYYYMMDD'.")
 
     # Check version make sure to include 'latest'
-    if version is not None and not file_validation.ScienceFilePath.is_valid_version(
+    if version is not None and not file_validation.ImapFilePath.is_valid_version(
         version
     ):
         raise ValueError("Not a valid version, use format 'vXXX'.")
