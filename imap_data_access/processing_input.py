@@ -8,7 +8,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-from imap_data_access import AncillaryFilePath, ScienceFilePath, SPICEFilePath
+from imap_data_access import (
+    AncillaryFilePath,
+    ImapFilePath,
+    ScienceFilePath,
+    SPICEFilePath,
+)
 
 
 class ProcessingInputType(Enum):
@@ -41,8 +46,10 @@ class ProcessingInput(ABC):
 
     Attributes
     ----------
-    filepath_list : list[str]
-        A list of filepaths.
+    filename_list : list[str]
+        A list of filename(s).
+    imap_file_paths: list[ImapFilePath]
+        A list of file objects, one for each filename.
     input_type : ProcessingInputType
         The type of input file.
     source : str
@@ -55,6 +62,7 @@ class ProcessingInput(ABC):
     """
 
     filename_list: list[str] = None
+    imap_file_paths: list[ImapFilePath] = None
     input_type: ProcessingInputType = None
     # Following three are retrieved from dependency check.
     # But they can also come from the filename.
@@ -106,13 +114,13 @@ class ProcessingInput(ABC):
         This method is called by the constructor and can be overridden by subclasses.
         It works for ScienceFilePaths and AncillaryFilePaths, but not SPICEFilePaths.
 
-        This sets source, datatype, descriptor, and file_path_list attributes.
+        This sets source, datatype, descriptor, and file_obj_list attributes.
         """
         # For science and ancillary files
         source = set()
         data_type = set()
         descriptor = set()
-        file_path_list = []
+        file_obj_list = []
         for file in self.filename_list:
             path_validator = InputTypePathMapper[self.input_type.name].value(file)
 
@@ -122,7 +130,7 @@ class ProcessingInput(ABC):
             else:
                 data_type.add(self.input_type.value)
             descriptor.add(path_validator.descriptor)
-            file_path_list.append(str(path_validator.filename))
+            file_obj_list.append(path_validator)
 
         if len(source) != 1 or len(data_type) != 1 or len(descriptor) != 1:
             raise ValueError(
@@ -132,7 +140,7 @@ class ProcessingInput(ABC):
         self.source = source.pop()
         self.data_type = data_type.pop()
         self.descriptor = descriptor.pop()
-        self.file_path_list = file_path_list
+        self.imap_file_paths = file_obj_list
 
     def construct_json_output(self):
         """Construct a JSON output.
@@ -148,14 +156,7 @@ class ScienceInput(ProcessingInput):
 
     The class can contain multiple files, but they must have the same source, data type,
      and descriptor.
-
-    Attributes
-    ----------
-    science_file_paths : list[ScienceFilePath]
-        A list of ScienceFilePath objects.
     """
-
-    science_file_paths: list[ScienceFilePath] = None
 
     def __init__(self, *args):
         """Set the processing type to ScienceFile and then calls super().
