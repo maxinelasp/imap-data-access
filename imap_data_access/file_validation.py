@@ -466,7 +466,7 @@ class AncillaryFilePath(ImapFilePath):
         path is set by the "IMAP_DATA_DIR" environment variable, or defaults to "data/"
 
         Current filename convention:
-        "<mission>_<instrument>_<descriptor>_<start_date>(-<end_date>)_
+        "<mission>_<instrument>_<descriptor>_<start_date>(_<end_date>)_
         <version>.<extension>"
 
         <mission>: imap
@@ -554,7 +554,7 @@ class AncillaryFilePath(ImapFilePath):
         """
         if end_time:
             filename = (
-                f"imap_{instrument}_{descriptor}_{start_time}-{end_time}_"
+                f"imap_{instrument}_{descriptor}_{start_time}_{end_time}_"
                 f"{version}.{extension}"
             )
         else:
@@ -664,7 +664,7 @@ class AncillaryFilePath(ImapFilePath):
             r"(?P<instrument>[^_]+)_"
             r"(?P<descriptor>[^_]+)_"
             r"(?P<start_date>\d{8})"
-            r"(-(?P<end_date>\d{8}))?"  # Optional end_date field
+            r"(_(?P<end_date>\d{8}))?"  # Optional end_date
             r"_(?P<version>v\d{3})"
             r"\.(?P<extension>cdf|csv|json)$"
         )
