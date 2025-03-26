@@ -393,6 +393,9 @@ class ProcessingInputCollection:
     ) -> list[Path]:
         """Get the dependency files path from the collection.
 
+        Returns all file paths if no source or descriptor is provided. Otherwise,
+        it returns only the files that match the source and/or descriptor.
+
         Parameters
         ----------
         source : str, optional
@@ -406,8 +409,6 @@ class ProcessingInputCollection:
             list of ScienceInput files contained in the collection.
         """
         out = []
-        if source is None and descriptor is None:
-            raise ValueError("At least source or descriptor must be provided.")
 
         for input_type in self.processing_input:
             matches_source = source is None or input_type.source == source
@@ -423,7 +424,5 @@ class ProcessingInputCollection:
         """Download all the dependencies for the processing input."""
         # Go through science or ancillary or SPICE dependencies
         # processing input list and download all files
-        for dependency in self.processing_input:
-            for filepath in dependency.imap_file_paths:
-                download_path = filepath.construct_path()
-                download(download_path)
+        for path in self.get_file_paths():
+            download(path)
