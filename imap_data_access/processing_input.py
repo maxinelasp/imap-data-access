@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 
 from imap_data_access import (
     AncillaryFilePath,
@@ -14,6 +15,7 @@ from imap_data_access import (
     ScienceFilePath,
     SPICEFilePath,
 )
+from imap_data_access.io import download
 
 
 class ProcessingInputType(Enum):
@@ -370,17 +372,58 @@ class ProcessingInputCollection:
             elif file_creator["type"] == ProcessingInputType.SPICE_FILE.value:
                 self.add(SPICEInput(*file_creator["files"]))
 
-    def get_science_files(self) -> list[ProcessingInput]:
+    def get_science_inputs(self) -> list[ProcessingInput]:
         """Return just the science files from the collection.
 
         Returns
         -------
         out : list[ProcessingInput]
-            list of ScienceInput files contained in the collection.
+            List of ScienceInput files contained in the collection.
         """
         out = []
         for file in self.processing_input:
             if file.input_type == ProcessingInputType.SCIENCE_FILE:
                 out.append(file)
+        return out
+
+    def get_file_paths(
+        self,
+        source: str | None = None,
+        descriptor: str | None = None,
+    ) -> list[Path]:
+        """Get the dependency files path from the collection.
+
+        Parameters
+        ----------
+        source : str, optional
+            Instrument name.
+        descriptor : str, optional
+            Descriptor for the file.
+
+        Returns
+        -------
+        out : list[Path]
+            list of ScienceInput files contained in the collection.
+        """
+        out = []
+        if source is None and descriptor is None:
+            raise ValueError("At least source or descriptor must be provided.")
+
+        for input_type in self.processing_input:
+            matches_source = source is None or input_type.source == source
+            matches_descriptor = (
+                descriptor is None or input_type.descriptor == descriptor
+            )
+            if matches_source and matches_descriptor:
+                out.extend(file.construct_path() for file in input_type.imap_file_paths)
 
         return out
+
+    def download_all_files(self):
+        """Download all the dependencies for the processing input."""
+        # Go through science or ancillary or SPICE dependencies
+        # processing input list and download all files
+        for dependency in self.processing_input:
+            for filepath in dependency.imap_file_paths:
+                download_path = filepath.construct_path()
+                download(download_path)
