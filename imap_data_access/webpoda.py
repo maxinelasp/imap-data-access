@@ -24,7 +24,6 @@ import imap_data_access
 from imap_data_access.io import IMAPDataAccessError, _get_url_response
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 WEBPODA_APID_URL = "https://lasp.colorado.edu/ops/imap/poda/dap2/apids"
 # The system ID for the IMAP mission
