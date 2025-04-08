@@ -93,6 +93,7 @@ VALID_DATALEVELS = {
     "l3b",
     "l3c",
     "l3d",
+    "l3e",
 }
 
 VALID_FILE_EXTENSION = {"pkts", "cdf"}
