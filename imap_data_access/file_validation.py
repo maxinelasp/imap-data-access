@@ -381,6 +381,7 @@ _SPICE_TYPE_MAPPING = {
     "naif": "leapseconds",
     "imap_sclk_": "spacecraft_clock",
     "tf": "frames",
+    "mk": "metakernel",
     "tm": "metakernel",
     "sff": "thruster",
 }
@@ -484,12 +485,27 @@ class SPICEFilePath(ImapFilePath):
     )
 
     # Covers:
-    # Metakernels (type: 'tm')
-    mk_filename_pattern = (
-        r"(imap)_"
+    # SDC generated metakernels (type: 'tm')
+    sdc_mk_filename_pattern = (
+        r"(imap)_sdc_metakernel_"
         r"(?P<start_year>[\d]{4})_"
         r"v(?P<version>[\d]{3})\."
         r"(?P<type>tm)"
+    )
+
+    # Covers:
+    # MOC metakernels (type: 'mk')
+    attitude_mk_filename_pattern = (
+        r"imap_"
+        r"(?P<start_year_doy>\d{4}_\d{3})_"
+        r"a(?P<version>\d{2})\.spice\."
+        r"(?P<type>mk)"
+    )
+    ephemeris_mk_filename_pattern = (
+        r"IMAP_"
+        r"(?P<start_year_doy>\d{4}_\d{3})_"
+        r"e(?P<version>\d{2})\."
+        r"(?P<type>mk)"
     )
 
     valid_spice_regexes = (
@@ -499,7 +515,9 @@ class SPICEFilePath(ImapFilePath):
         re.compile(spice_prod_ver_pattern),
         re.compile(spice_frame_pattern),
         re.compile(sff_filename_pattern),
-        re.compile(mk_filename_pattern),
+        re.compile(sdc_mk_filename_pattern),
+        re.compile(attitude_mk_filename_pattern),
+        re.compile(ephemeris_mk_filename_pattern),
     )
 
     class InvalidSPICEFileError(Exception):
@@ -623,7 +641,7 @@ class SPICEFilePath(ImapFilePath):
         """
         filename = Path(filename)
         for regex in SPICEFilePath.valid_spice_regexes:
-            m = regex.match(filename.name.lower())
+            m = regex.match(filename.name)
             if m is not None:
                 spice_metadata = SPICEFilePath._spice_parts_handler(m.groupdict())
                 # Add the extension to the metadata
