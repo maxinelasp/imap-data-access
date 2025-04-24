@@ -181,14 +181,15 @@ def query(
         raise ValueError("Not a valid version, use format 'vXXX'.")
 
     # check repointing follows 'repoint00000' format
-    if (
-        repointing is not None
-        and not file_validation.ScienceFilePath.is_valid_repointing(repointing)
-    ):
-        raise ValueError(
-            "Not a valid repointing, use format repoint<num>,"
-            " where <num> is a 5 digit integer."
-        )
+    if repointing is not None:
+        if not file_validation.ScienceFilePath.is_valid_repointing(repointing):
+            raise ValueError(
+                "Not a valid repointing, use format repoint<num>,"
+                " where <num> is a 5 digit integer."
+            )
+
+        # Query API expects an integer
+        query_params["repointing"] = int(repointing[-5:])
 
     # check extension
     if extension is not None and extension not in imap_data_access.VALID_FILE_EXTENSION:
