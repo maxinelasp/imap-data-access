@@ -204,7 +204,7 @@ class ScienceFilePath(ImapFilePath):
         if data_level == "l0":
             extension = "pkts"
         time_field = start_time
-        if repointing:
+        if repointing is not None:
             if ScienceFilePath.is_valid_repointing(repointing):
                 time_field += f"-{repointing}"
             elif isinstance(repointing, int):
