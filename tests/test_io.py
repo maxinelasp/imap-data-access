@@ -154,6 +154,7 @@ def test_download_already_exists(mock_send_request):
         },
         # Make sure not all query params are sent if they are missing
         {"instrument": "swe", "data_level": "l0"},
+        {"instrument": "glows", "data_level": "l1a", "repointing": "1"},
     ],
 )
 def test_query(mock_send_request, query_params: dict):
@@ -179,7 +180,10 @@ def test_query(mock_send_request, query_params: dict):
     # Assert that the correct URL was used for the query
     sent_request = mock_send_request.call_args[0][0]
     called_url = sent_request.url
-    str_params = "&".join(f"{k}={v}" for k, v in query_params.items())
+    fixed_query = query_params.copy()
+    if "repointing" in fixed_query:
+        fixed_query["repointing"] = 1
+    str_params = "&".join(f"{k}={v}" for k, v in fixed_query.items())
     expected_url_encoded = f"https://api.test.com/query?{str_params}"
     assert called_url == expected_url_encoded
 

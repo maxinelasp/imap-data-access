@@ -167,7 +167,7 @@ class ScienceFilePath(ImapFilePath):
         descriptor: str,
         start_time: str,
         version: str,
-        repointing: int | None = None,
+        repointing: int | str | None = None,
     ) -> ScienceFilePath:
         """Generate a filename from given inputs and return a ScienceFilePath instance.
 
@@ -192,7 +192,8 @@ class ScienceFilePath(ImapFilePath):
             The version of the data
         repointing : int, optional
             The repointing number for this file, optional field that
-            is not always present
+            is not always present. Should be either a string like "repointXXXXX" or an
+            integer like 12345.
 
         Returns
         -------
@@ -203,8 +204,12 @@ class ScienceFilePath(ImapFilePath):
         if data_level == "l0":
             extension = "pkts"
         time_field = start_time
-        if repointing:
-            time_field += f"-repoint{repointing:05d}"
+        if repointing is not None:
+            if ScienceFilePath.is_valid_repointing(repointing):
+                time_field += f"-{repointing}"
+            elif isinstance(repointing, int):
+                time_field += f"-repoint{repointing:05d}"
+
         filename = (
             f"imap_{instrument}_{data_level}_{descriptor}_{time_field}_"
             f"{version}.{extension}"

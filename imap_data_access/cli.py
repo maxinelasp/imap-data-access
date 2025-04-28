@@ -335,7 +335,10 @@ def main():  # noqa: PLR0915
         help="End date for a range of file timestamps in YYYYMMDD format",
     )
     query_parser.add_argument(
-        "--repointing", type=int, required=False, help="Repointing number (int)"
+        "--repointing",
+        type=str,
+        required=False,
+        help="Repointing number (repoint00000)",
     )
     query_parser.add_argument(
         "--version",
