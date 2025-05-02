@@ -372,17 +372,26 @@ class ProcessingInputCollection:
             elif file_creator["type"] == ProcessingInputType.SPICE_FILE.value:
                 self.add(SPICEInput(*file_creator["files"]))
 
-    def get_science_inputs(self) -> list[ProcessingInput]:
+    def get_science_inputs(self, source: str | None = None) -> list[ProcessingInput]:
         """Return just the science files from the collection.
+
+        Parameters
+        ----------
+        source : str, optional
+            Instrument name.
 
         Returns
         -------
         out : list[ProcessingInput]
             List of ScienceInput files contained in the collection.
+            If "source" is provided, return only the ScienceInput files that match the
+            source.
         """
         out = []
         for file in self.processing_input:
-            if file.input_type == ProcessingInputType.SCIENCE_FILE:
+            if file.input_type == ProcessingInputType.SCIENCE_FILE and (
+                not source or file.source == source
+            ):
                 out.append(file)
         return out
 
@@ -426,3 +435,33 @@ class ProcessingInputCollection:
         # processing input list and download all files
         for path in self.get_file_paths():
             download(path)
+
+    def get_valid_inputs_for_start_date(
+        self, start_date: datetime
+    ) -> ProcessingInputCollection:
+        """Return collection containing only ImapFilePaths valid for the start date.
+
+        Parameters
+        ----------
+        start_date : datetime
+            The time to filter the collection with.
+
+        Returns
+        -------
+        ProcessingInputCollection
+            Collection of ProcessingInput objects that are valid for the start date.
+        """
+        valid_date_collection = ProcessingInputCollection()
+        for processing_input in self.processing_input:
+            valid_date_filepaths = []
+            input_type = type(processing_input)
+            for filepath in processing_input.imap_file_paths:
+                # Check if each file in the ProcessingInput is valid for the start date
+                if filepath.is_valid_for_start_date(start_date):
+                    valid_date_filepaths.append(str(filepath.filename))
+            # Create a new ProcessingInput from the valid filepaths and add it to the
+            # collection.
+            if valid_date_filepaths:
+                valid_date_collection.add(input_type(*valid_date_filepaths))
+
+        return valid_date_collection
