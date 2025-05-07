@@ -375,6 +375,9 @@ class ProcessingInputCollection:
     def get_science_inputs(self, source: str | None = None) -> list[ProcessingInput]:
         """Return just the science files from the collection.
 
+        NOTE: get_processing_inputs is a more general method that should be used instead
+        of this one.
+
         Parameters
         ----------
         source : str, optional
@@ -387,13 +390,51 @@ class ProcessingInputCollection:
             If "source" is provided, return only the ScienceInput files that match the
             source.
         """
-        out = []
-        for file in self.processing_input:
-            if file.input_type == ProcessingInputType.SCIENCE_FILE and (
-                not source or file.source == source
-            ):
-                out.append(file)
-        return out
+        return self.get_processing_inputs(
+            ProcessingInputType.SCIENCE_FILE, source=source
+        )
+
+    def get_processing_inputs(
+        self,
+        input_type: ProcessingInputType | None = None,
+        source: str | None = None,
+        descriptor: str | None = None,
+        data_type: str | None = None,
+    ) -> list[ProcessingInput]:
+        """Get the processing inputs from the collection that match the parameters.
+
+        If called with no parameters, the entire ProcessingInput list is returned.
+
+        Parameters
+        ----------
+        input_type : ProcessingInputType | None
+            The type of input to filter by. If None, all types are included.
+        source : str | None
+            The source to filter by. If None, all sources are included.
+        descriptor : str | None
+            The descriptor to filter by. If None, all descriptors are included.
+        data_type : str | None
+            The data type to filter by. If None, all data types are included.
+
+        Returns
+        -------
+        list[ProcessingInput]
+            List of ProcessingInput objects that match the parameters.
+        """
+        output = []
+        for processing_input in self.processing_input:
+            match_type = input_type is None or processing_input.input_type == input_type
+            match_source = source is None or processing_input.source == source
+            match_descriptor = (
+                descriptor is None or descriptor in processing_input.descriptor
+            )
+            match_data_type = (
+                data_type is None or processing_input.data_type == data_type
+            )
+            if match_type and match_source and match_descriptor and match_data_type:
+                output.append(processing_input)
+
+        return output
 
     def get_file_paths(
         self,
@@ -418,14 +459,12 @@ class ProcessingInputCollection:
             list of ScienceInput files contained in the collection.
         """
         out = []
-
-        for input_type in self.processing_input:
-            matches_source = source is None or input_type.source == source
-            matches_descriptor = (
-                descriptor is None or descriptor in input_type.descriptor
+        for processing_input in self.get_processing_inputs(
+            source=source, descriptor=descriptor
+        ):
+            out.extend(
+                file.construct_path() for file in processing_input.imap_file_paths
             )
-            if matches_source and matches_descriptor:
-                out.extend(file.construct_path() for file in input_type.imap_file_paths)
 
         return out
 
