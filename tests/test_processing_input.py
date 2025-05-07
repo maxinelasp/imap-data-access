@@ -485,3 +485,63 @@ def test_get_valid_inputs_for_start_date():
         )
         == date
     )
+
+
+def test_get_processing_inputs():
+    ultra_sci_45sensor = ScienceInput(
+        "imap_ultra_l1c_45sensor-pset_20240312_v000.cdf",
+        "imap_ultra_l1c_45sensor-pset_20240313_v000.cdf",
+    )
+    ultra_sci_90sensor = ScienceInput(
+        "imap_ultra_l1c_90sensor-pset_20240312_v000.cdf",
+    )
+    hi_sci_45sensor = ScienceInput(
+        "imap_hi_l1c_45sensor-pset_20240312_v000.cdf",
+    )
+    hi_sci_90sensor = ScienceInput(
+        "imap_hi_l1c_90sensor-pset_20240312_v000.cdf",
+    )
+    mag_sci_anc = ScienceInput(
+        "imap_mag_l1a_norm-magi_20240312_v000.cdf",
+    )
+    hit_anc = AncillaryInput(
+        "imap_hit_l1b-cal_20250101_v000.cdf",
+    )
+
+    input_collection = processing_input.ProcessingInputCollection(
+        ultra_sci_45sensor,
+        ultra_sci_90sensor,
+        hi_sci_45sensor,
+        hi_sci_90sensor,
+        mag_sci_anc,
+        hit_anc,
+    )
+
+    # Get all inputs
+    all_inputs = input_collection.get_processing_inputs()
+    assert len(all_inputs) == 6
+
+    # Get all science inputs
+    science_inputs = input_collection.get_processing_inputs(
+        input_type=ProcessingInputType.SCIENCE_FILE
+    )
+    assert len(science_inputs) == 5
+
+    # Get all ancillary inputs
+    ancillary_inputs = input_collection.get_processing_inputs(
+        input_type=ProcessingInputType.ANCILLARY_FILE
+    )
+    assert len(ancillary_inputs) == 1
+
+    # Get all ultra inputs
+    ultra_inputs = input_collection.get_processing_inputs(source="ultra")
+    assert len(ultra_inputs) == 2
+
+    # multiple filters
+    hit_anc_inputs = input_collection.get_processing_inputs(
+        source="hit", input_type=ProcessingInputType.ANCILLARY_FILE
+    )
+    assert len(hit_anc_inputs) == 1
+
+    data_level_inputs = input_collection.get_processing_inputs(data_type="l1c")
+    assert len(data_level_inputs) == 4
