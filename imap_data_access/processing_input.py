@@ -34,6 +34,14 @@ class InputTypePathMapper(Enum):
     SPICE_FILE = SPICEFilePath
 
 
+class SPICESource(Enum):
+    """Enum matching source of SPICE file types."""
+
+    SPICE = "spice"
+    SPIN = "spin"
+    REPOINT = "repoint"
+
+
 @dataclass
 class ProcessingInput(ABC):
     """Interface for input file management and serialization.
@@ -271,7 +279,23 @@ class SPICEInput(ProcessingInput):
     def __init__(self, *args) -> None:
         """Initialize the attributes from the SPICE file name.
 
-        Not completed.
+        The SPICEInput class customizes the initialization process to handle
+        SPICE-specific requirements. It sets attributes such as input type,
+        source, data type, and descriptor based on the provided filenames.
+        These attributes are used to group and manage SPICE files effectively.
+
+        Key Attributes:
+        1. input_type: Identifies the type of input. ProcessingInputType.SPICE_FILE
+        2. source: Specifies the source of the files
+            (e.g., 'spice', 'spin', 'repoint'). This helps in serialize() output. Eg.
+           [
+                {"type": "spice", "files": [ordered list of SPICE files]},
+                {"type": "spin", "files": [<list of spin files>]},
+                {"type": "repoint", "files": [<latest repoint file>]}
+           ]
+        3. data_type: Indicates the type of data. ProcessingInputType.SPICE_FILE.value
+        4. descriptor: Indicates the file descriptor ('historical' by default, or 'best'
+            if predictive kernels are included).
 
         Parameters
         ----------
@@ -279,18 +303,54 @@ class SPICEInput(ProcessingInput):
             Input SPICE filenames.
         """
         self.input_type = ProcessingInputType.SPICE_FILE
-        # Not yet completed
-        raise NotImplementedError
+        self.data_type = ProcessingInputType.SPICE_FILE.value
+        self.descriptor = "historical"
+        super().__init__(*args)
 
     def _set_attributes_from_filenames(self) -> None:
         """Set the source, data type, and descriptor attributes based on filename."""
-        # TODO: update SPICEFilePath to retrieve data_type and descriptor from
-        # file name. Do we have an expected filename format?
+        source = set()
+        file_obj_list = []
 
-        # just using examples for now
-        self.source = "sc_attitude"
-        self.data_type = ProcessingInputType.SPICE_FILE.value
-        self.descriptor = "predict"
+        for file in self.filename_list:
+            path_validator = SPICEFilePath(file)
+            kernel_type = path_validator.spice_metadata["type"]
+            source.add(kernel_type)
+            file_obj_list.append(path_validator)
+
+            # Set the descriptor to be predict if it contains any predict kernel types
+            if (
+                "ephemeris" in kernel_type and kernel_type != "ephemeris_reconstructed"
+            ) or kernel_type == "attitude_predict":
+                self.descriptor = "best"
+
+        if "spin" in source:
+            # Update the source to be spin
+            self.source = SPICESource.SPIN.value
+            if len(source) != 1:
+                raise ValueError(
+                    "If spin data in the list, it should only contain spin files"
+                )
+        elif "repoint" in source:
+            # Update the source to be repoint
+            self.source = SPICESource.REPOINT.value
+            # Latest file will contain all the repointing data.
+            if len(file_obj_list) != 1:
+                raise ValueError(
+                    "There should only be one repoint file in the list of files"
+                )
+        else:
+            self.source = SPICESource.SPICE.value
+
+        self.imap_file_paths = file_obj_list
+
+    def construct_json_output(self):
+        """Construct a JSON output.
+
+        This contains the minimum information needed to construct an identical
+        ProcessingInput instance (input_type and filename)
+        """
+        return {"type": self.source, "files": self.filename_list}
 
     def get_time_range(self):
         """Not yet complete."""
@@ -408,7 +468,7 @@ class ProcessingInputCollection:
         Parameters
         ----------
         source : str, optional
-            Instrument name.
+            Instrument name or 'spice' or 'spin' or 'repoint'.
         descriptor : str, optional
             Descriptor for the file.
 
