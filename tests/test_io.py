@@ -157,6 +157,8 @@ def test_download_already_exists(mock_send_request):
             "descriptor": "test-description",
             "start_date": "20100101",
             "end_date": "20100102",
+            "ingestion_start_date": "20100101",
+            "ingestion_end_date": "20100102",
             "repointing": "repoint00001",
             "version": "v000",
             "extension": "pkts",
@@ -241,6 +243,16 @@ def test_query_bad_params(mock_send_request):
         ),
         ("start_date", "badInput", "Not a valid start date, use format 'YYYYMMDD'."),
         ("end_date", "badInput", "Not a valid end date, use format 'YYYYMMDD'."),
+        (
+            "ingestion_start_date",
+            "badInput",
+            "Not a valid ingestion start date, use format 'YYYYMMDD'.",
+        ),
+        (
+            "ingestion_end_date",
+            "badInput",
+            "Not a valid ingestion end date, use format 'YYYYMMDD'.",
+        ),
         (
             "repointing",
             "badInput",
