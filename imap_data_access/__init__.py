@@ -16,6 +16,14 @@ from imap_data_access.file_validation import (
     SPICEFilePath,
 )
 from imap_data_access.io import download, query, upload
+from imap_data_access.processing_input import (
+    AncillaryInput,
+    ProcessingInputCollection,
+    RepointInput,
+    ScienceInput,
+    SPICEInput,
+    SpinInput,
+)
 
 __all__ = [
     "FILENAME_CONVENTION",
@@ -23,9 +31,15 @@ __all__ = [
     "VALID_FILE_EXTENSION",
     "VALID_INSTRUMENTS",
     "AncillaryFilePath",
+    "AncillaryInput",
     "ImapFilePath",
+    "ProcessingInputCollection",
+    "RepointInput",
     "SPICEFilePath",
+    "SPICEInput",
     "ScienceFilePath",
+    "ScienceInput",
+    "SpinInput",
     "download",
     "query",
     "upload",
