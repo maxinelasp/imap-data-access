@@ -182,6 +182,19 @@ def test_generate_from_inputs():
     )
     assert sfm.construct_path() == expected_output
 
+    sfm = ScienceFilePath.generate_from_inputs(
+        "glows", "l3a", "test", "20210101", "v001", cr=23
+    )
+    expected_output = imap_data_access.config["DATA_DIR"] / Path(
+        "imap/glows/l3a/2021/01/imap_glows_l3a_test_20210101-cr00023_v001.cdf"
+    )
+    assert sfm.construct_path() == expected_output
+
+    with pytest.raises(ScienceFilePath.InvalidScienceFileError):
+        sfm = ScienceFilePath.generate_from_inputs(
+            "glows", "l3a", "test", "20210101", "v001", cr=23, repointing=1
+        )
+
 
 def test_spice_file_path():
     """Tests the ``SPICEFilePath`` class."""

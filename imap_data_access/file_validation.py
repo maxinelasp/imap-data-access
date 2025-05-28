@@ -154,6 +154,7 @@ class ScienceFilePath(ImapFilePath):
         self.descriptor = split_filename["descriptor"]
         self.start_date = split_filename["start_date"]
         self.repointing = split_filename["repointing"]
+        self.cr = split_filename["cr"]
         self.version = split_filename["version"]
         self.extension = split_filename["extension"]
 
@@ -170,6 +171,7 @@ class ScienceFilePath(ImapFilePath):
         start_time: str,
         version: str,
         repointing: int | None = None,
+        cr: int | None = None,
     ) -> ScienceFilePath:
         """Generate a filename from given inputs and return a ScienceFilePath instance.
 
@@ -195,6 +197,9 @@ class ScienceFilePath(ImapFilePath):
         repointing : int, optional
             The repointing number for this file, optional field that
             is not always present
+        cr : int, optional
+            The Carrington rotation number for the file. This is an optional field.
+            Only one (or zero) of repoint or CR can be included.
 
         Returns
         -------
@@ -207,6 +212,12 @@ class ScienceFilePath(ImapFilePath):
         time_field = start_time
         if repointing:
             time_field += f"-repoint{repointing:05d}"
+            if cr:
+                raise ScienceFilePath.InvalidScienceFileError(
+                    "Only one of CR or repointing can be included."
+                )
+        if cr:
+            time_field += f"-cr{cr:05d}"
         filename = (
             f"imap_{instrument}_{data_level}_{descriptor}_{time_field}_"
             f"{version}.{extension}"
@@ -327,7 +338,8 @@ class ScienceFilePath(ImapFilePath):
             r"(?P<data_level>[^_]+)_"
             r"(?P<descriptor>[^_]+)_"
             r"(?P<start_date>\d{8})"
-            r"(-(?P<interval_type>(?:repoint|cr))(?P<interval>\d{5}))?"  # Optional repointing/CR field
+            # Optional repointing/CR field
+            r"(-(?P<interval_type>(?:repoint|cr))(?P<interval>\d{5}))?"
             r"_(?P<version>v\d{3})"
             r"\.(?P<extension>cdf|pkts)$"
         )
@@ -375,6 +387,22 @@ class ScienceFilePath(ImapFilePath):
             Whether input repointing is valid or not.
         """
         return re.fullmatch(r"repoint\d{5}", str(input_repointing))
+
+    @staticmethod
+    def is_valid_cr(input_cr: str) -> bool:
+        """Check input carrington rotation string is in valid format 'crXXXXX'.
+
+        Parameters
+        ----------
+        input_cr : str
+            Carrington rotation to be checked.
+
+        Returns
+        -------
+        bool
+            Whether input carrington rotation is valid or not.
+        """
+        return re.fullmatch(r"cr\d{5}", str(input_cr))
 
 
 # Transform the suffix to the directory structure we are using
