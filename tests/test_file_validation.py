@@ -9,6 +9,7 @@ import imap_data_access
 from imap_data_access.file_validation import (
     AncillaryFilePath,
     CadenceFilePath,
+    ImapFilePath,
     QuicklookFilePath,
     ScienceFilePath,
     SPICEFilePath,
@@ -186,7 +187,7 @@ def test_generate_from_inputs():
     )
     assert sfm.construct_path() == expected_output
 
-    with pytest.raises(ScienceFilePath.InvalidScienceFileError):
+    with pytest.raises(ImapFilePath.InvalidImapFileError):
         sfm = ScienceFilePath.generate_from_inputs(
             "glows", "l3a", "test", "20210101", "v001", cr=23, repointing=1
         )
