@@ -24,6 +24,7 @@ def test_extract_filename_components():
         "descriptor": "burst",
         "start_date": "20210101",
         "repointing": None,
+        "cr": None,
         "version": "v001",
         "extension": "pkts",
     }
@@ -36,6 +37,12 @@ def test_extract_filename_components():
     assert ScienceFilePath.extract_filename_components(
         valid_filename
     ) == expected_output | {"repointing": 1}
+
+    # Add a CR value
+    valid_filename = "imap_mag_l1a_burst_20210101-cr00001_v001.pkts"
+    assert ScienceFilePath.extract_filename_components(
+        valid_filename
+    ) == expected_output | {"cr": 1}
 
     # Add a multi-part hyphen descriptor
     valid_filename = "imap_mag_l1a_burst-1min_20210101_v001.pkts"

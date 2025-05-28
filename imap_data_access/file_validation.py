@@ -128,6 +128,8 @@ class ScienceFilePath(ImapFilePath):
         <start_date>: startdate is the earliest date in the data, format: YYYYMMDD
         <repointing>: This is an optional field. It is used to indicate which
             repointing the data is from, format: repointXXXXX
+        <cr>: This is an optional field describing the Carrington rotation.
+            format: crXXXXX.
         <version>: This stores the data version for this product, format: vXXX
 
         Parameters
@@ -301,7 +303,8 @@ class ScienceFilePath(ImapFilePath):
         """Extract all components from filename. Does not validate instrument or level.
 
         Will return a dictionary with the following keys:
-        { instrument, datalevel, descriptor, startdate, enddate, version, extension }
+        { instrument, datalevel, descriptor, startdate, enddate, version, extension, cr,
+        repointing }
 
         If a match is not found, a ValueError will be raised.
 
@@ -324,7 +327,7 @@ class ScienceFilePath(ImapFilePath):
             r"(?P<data_level>[^_]+)_"
             r"(?P<descriptor>[^_]+)_"
             r"(?P<start_date>\d{8})"
-            r"(-repoint(?P<repointing>\d{5}))?"  # Optional repointing field
+            r"(-(?P<interval_type>(?:repoint|cr))(?P<interval>\d{5}))?"  # Optional repointing/CR field
             r"_(?P<version>v\d{3})"
             r"\.(?P<extension>cdf|pkts)$"
         )
@@ -339,9 +342,22 @@ class ScienceFilePath(ImapFilePath):
             )
 
         components = match.groupdict()
-        if components["repointing"]:
+        components["repointing"] = None
+        components["cr"] = None
+
+        # If the repointing field exists, we want to check if it's a repointing or
+        # carrington rotation (cr) and set the field accordingly
+        interval_number = components.pop("interval")
+        if interval_number:
+            interval_number = int(interval_number)
             # We want the repointing number as an integer
-            components["repointing"] = int(components["repointing"])
+            if components["interval_type"] == "cr":
+                components["cr"] = interval_number
+            elif components["interval_type"] == "repoint":
+                components["repointing"] = interval_number
+
+        del components["interval_type"]
+
         return components
 
     @staticmethod
