@@ -246,7 +246,7 @@ class ScienceFilePath(ImapFilePath):
             elif isinstance(repointing, int):
                 time_field += f"-repoint{repointing:05d}"
             if cr:
-                raise ScienceFilePath.InvalidScienceFileError(
+                raise ImapFilePath.InvalidImapFileError(
                     "Only one of CR or repointing can be included."
                 )
         if cr:
