@@ -13,6 +13,7 @@ Use
     imap-data-access download <file_path>
     imap-data-access query <query-parameters>
     imap-data-access upload <file_path>
+    imap-data-access reprocess <reprocessing parameters>
 """
 
 import argparse
@@ -51,25 +52,34 @@ def _print_query_results_table(query_results: list[dict]):
     if num_files == 0:
         return
 
-    # Use the keys of the first item in query_results for the header
+    # Use the query_results for the header
     headers = [
         "Instrument",
         "Data Level",
         "Descriptor",
         "Start Date",
+        "Ingestion Date",
         "Repointing",
         "Version",
         "Filename",
     ]
 
     # Calculate the maximum width for each column based on the header and the data
+    # have to adjust Ingestion Date and Filename to properly align
     column_widths = {}
     for header in headers[:-1]:
         column_widths[header] = max(
             len(header),
             *(len(str(item.get(header.lower(), ""))) for item in query_results),
         )
-        # Calculate the maximum width for each column based on the header and the data
+
+        column_widths["Ingestion Date"] = max(
+            len("Ingestion Date"),
+            *(
+                len(os.path.basename(item.get("ingestion_date", "")))
+                for item in query_results
+            ),
+        )
 
         column_widths["Filename"] = max(
             len("Filename"),
@@ -88,8 +98,8 @@ def _print_query_results_table(query_results: list[dict]):
 
     # Add hyphens for a separator between header and data
     hyphens = "|" + "-" * (sum(column_widths.values()) + 3 * len(headers) - 1) + "|"
-    print(hyphens)
 
+    print(hyphens)
     # Print header
     print(format_string.format(*headers))
     print(hyphens)
@@ -101,6 +111,7 @@ def _print_query_results_table(query_results: list[dict]):
             str(item.get("data_level", "")),
             str(item.get("descriptor", "")),
             str(item.get("start_date", "")),
+            str(item.get("ingestion_date", "")),
             str(item.get("repointing", "")) or "",
             str(item.get("version", "")),
             os.path.basename(item.get("file_path", "")),
@@ -126,6 +137,8 @@ def _query_parser(args: argparse.Namespace):
         "descriptor",
         "start_date",
         "end_date",
+        "ingestion_start_date",
+        "ingestion_end_date",
         "repointing",
         "version",
         "extension",
@@ -199,6 +212,31 @@ def _webpoda_parser(args: argparse.Namespace):
     print("Successfully downloaded the data from webpoda.")
 
 
+def _reprocess_parser(args: argparse.Namespace):
+    """Trigger reprocessing of data for a specific time range.
+
+    Instrument, data level, and descriptor are optional.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        An object containing the parsed arguments and their values
+    """
+    if not args.start_date:
+        raise ValueError("The 'start_date' argument is required.")
+    if not args.end_date:
+        raise ValueError("The 'end_date' argument is required.")
+        # Filter to get the arguments of interest from the namespace
+    valid_args = ["start_date", "end_date", "instrument", "data_level", "descriptor"]
+    reprocess_params = {
+        key: value
+        for key, value in vars(args).items()
+        if key in valid_args and value is not None
+    }
+    imap_data_access.reprocess(**reprocess_params)
+    print("Successfully triggered reprocessing for the given parameters.")
+
+
 # PLR0915: too many statements
 def main():  # noqa: PLR0915
     """Parse the command line arguments.
@@ -244,6 +282,19 @@ def main():  # noqa: PLR0915
     help_menu_for_query = (
         "Query the IMAP SDC for files matching the query parameters. "
         "The query parameters are optional, but at least one must be provided. "
+    )
+    reprocess_help = (
+        "Trigger reprocessing for files matching the parameters in the range of the "
+        "given start and end date. Instrument, data-level, and descriptor are optional."
+        " Start date and end date are required. If no instrument is specified, "
+        "reprocessing will be triggered for all instruments. If no data-level is "
+        "specified, reprocessing will be triggered for all data-levels."
+        "Run 'reprocess -h' for more information."
+    )
+    help_menu_for_reprocess = (
+        "Trigger reprocessing for files matching the parameters in the range of the "
+        "given start and end date. Instrument, data-level, and descriptor are optional."
+        " Start date and end date are required."
     )
     upload_help = (
         "Upload a file to the IMAP SDC. This must be the full path to the file."
@@ -335,7 +386,22 @@ def main():  # noqa: PLR0915
         help="End date for a range of file timestamps in YYYYMMDD format",
     )
     query_parser.add_argument(
-        "--repointing", type=int, required=False, help="Repointing number (int)"
+        "--ingestion-start-date",
+        type=str,
+        required=False,
+        help="Ingestion start date for a range of file timestamps in YYYYMMDD format",
+    )
+    query_parser.add_argument(
+        "--ingestion-end-date",
+        type=str,
+        required=False,
+        help="Ingestion end date for a range of file timestamps in YYYYMMDD format",
+    )
+    query_parser.add_argument(
+        "--repointing",
+        type=str,
+        required=False,
+        help="Repointing number (repoint00000)",
     )
     query_parser.add_argument(
         "--version",
@@ -401,6 +467,42 @@ def main():  # noqa: PLR0915
     )
     parser_webpoda.set_defaults(func=_webpoda_parser)
 
+    # Reprocess command (with optional arguments)
+    reprocess_parser = subparsers.add_parser(
+        "reprocess", help=reprocess_help, description=help_menu_for_reprocess
+    )
+    reprocess_parser.add_argument(
+        "--start-date",
+        type=str,
+        required=True,
+        help="Start date for reprocessing in YYYYMMDD format",
+    )
+    reprocess_parser.add_argument(
+        "--end-date",
+        type=str,
+        required=True,
+        help="End date for reprocessing in YYYYMMDD format",
+    )
+    reprocess_parser.add_argument(
+        "--instrument",
+        type=str,
+        required=False,
+        help="Name of the instrument to reprocess",
+        choices=imap_data_access.VALID_INSTRUMENTS,
+    )
+    reprocess_parser.add_argument(
+        "--data-level",
+        type=str,
+        required=False,
+        help="Data level of the product to reprocess (l0, l1a, l2, etc.)",
+    )
+    reprocess_parser.add_argument(
+        "--descriptor",
+        type=str,
+        required=False,
+        help="Descriptor of the product to reprocess (raw, burst, etc.)",
+    )
+    reprocess_parser.set_defaults(func=_reprocess_parser)
     # Parse the arguments and set the values
     try:
         args = parser.parse_args()
@@ -439,7 +541,7 @@ def main():  # noqa: PLR0915
         args.func(args)
     except Exception as e:
         # Make sure we are exiting with non-zero exit code and printing the message
-        parser.exit(status=1, message=str(e) + "\n")
+        parser.exit(status=1, message=f"{e!r}\n")
 
 
 if __name__ == "__main__":

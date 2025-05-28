@@ -1,17 +1,15 @@
 """Input/output capabilities for the IMAP data processing pipeline."""
 
 import contextlib
-import json
 import logging
-import urllib.request
 from pathlib import Path
 from typing import Optional, Union
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+
+import requests
 
 import imap_data_access
 from imap_data_access import file_validation
-from imap_data_access.file_validation import generate_imap_file_path
+from imap_data_access.file_validation import ScienceFilePath, generate_imap_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -23,34 +21,25 @@ class IMAPDataAccessError(Exception):
 
 
 @contextlib.contextmanager
-def _get_url_response(request: urllib.request.Request):
-    """Get the response from a URL request.
+def _make_request(request: requests.PreparedRequest):
+    """Get the response from a URL request using the requests library.
 
-    This is a helper function to make it easier to handle
-    the different types of errors that can occur when
-    opening a URL and write out the response body.
+    This is a helper function to handle different types of errors that can occur
+    when making HTTP requests and yield the response body.
     """
+    logger.debug("Making request: %s", request)
     try:
-        # Open the URL and yield the response
-        with urllib.request.urlopen(request) as response:
+        with requests.Session() as session:
+            response = session.send(request)
+            response.raise_for_status()
             yield response
-
-    except HTTPError as e:
-        if e.status == 307:
-            # If the server is redirecting us, we need to follow the redirect
-            request.full_url = e.headers["Location"]
-            with _get_url_response(request) as response:
-                yield response
-        else:
-            message = (
-                f"HTTP Error: {e.code} - {e.reason}\n"
-                f"Server Message: {e.read().decode('utf-8')}"
-            )
-            raise IMAPDataAccessError(message) from e
-
-    except URLError as e:
-        message = f"URL Error: {e.reason}"
-        raise IMAPDataAccessError(message) from e
+    except requests.exceptions.HTTPError as e:
+        # e.response.reason captures the error message from the API
+        error_msg = f"{e.response.status_code} {e.response.reason}: {e.response.text}"
+        raise IMAPDataAccessError(error_msg) from e
+    except requests.exceptions.RequestException as e:
+        error_msg = f"{e.response.status_code} {e.response.reason}: {e.response.text}"
+        raise IMAPDataAccessError(error_msg) from e
 
 
 def download(file_path: Union[Path, str]) -> Path:
@@ -81,21 +70,19 @@ def download(file_path: Union[Path, str]) -> Path:
         logger.info("The file %s already exists, skipping download", destination)
         return destination
 
-    # encode the query parameters
-    url = f"{imap_data_access.config['DATA_ACCESS_URL']}"
-    url += f"/download/{file_path}"
+    url = f"{imap_data_access.config['DATA_ACCESS_URL']}/download/{file_path}"
     logger.info("Downloading file %s from %s to %s", file_path, url, destination)
 
     # Create a request with the provided URL
-    request = urllib.request.Request(url, method="GET")
+    request = requests.Request("GET", url).prepare()
     # Open the URL and download the file
-    with _get_url_response(request) as response:
+    with _make_request(request) as response:
         logger.debug("Received response: %s", response)
         # Save the file locally with the same filename
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with open(destination, "wb") as local_file:
-            local_file.write(response.read())
+        destination.write_bytes(response.content)
 
+    logger.info("File %s downloaded successfully", destination)
     return destination
 
 
@@ -108,7 +95,9 @@ def query(
     descriptor: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    repointing: Optional[str] = None,
+    ingestion_start_date: Optional[str] = None,
+    ingestion_end_date: Optional[str] = None,
+    repointing: Optional[Union[str, int]] = None,
     version: Optional[str] = None,
     extension: Optional[str] = None,
 ) -> list[dict[str, str]]:
@@ -133,8 +122,14 @@ def query(
     end_date : str, optional
         End date in YYYYMMDD format. Note this is to search for all files
         with start dates before the requested end_date.
+    ingestion_start_date : str, optional
+        Ingestion start date in YYYYMMDD format. Note this is to search
+        for all files with ingestion start dates on or after this value.
+    ingestion_end_date : str, optional
+        Ingestion end date in YYYYMMDD format. Note this is to search
+        for all files with ingestion start dates before the requested end_date.
     repointing : str, optional
-        Repointing string, in the format 'repoint00000'
+        Repointing string, in the format 'repoint00000'.
     version : str, optional
         Data version in the format ``vXXX`` or 'latest'.
     extension : str, optional
@@ -148,6 +143,7 @@ def query(
     # locals() gives us the keyword arguments passed to the function
     # and allows us to filter out the None values
     query_params = {key: value for key, value in locals().items() if value is not None}
+    logger.debug("Input query parameters: %s", query_params)
 
     # removing version from query if it is 'latest',
     # ensuring other parameters are passed
@@ -189,38 +185,54 @@ def query(
     ):
         raise ValueError("Not a valid end date, use format 'YYYYMMDD'.")
 
+    # Check ingestion-start-date
+    if (
+        ingestion_start_date is not None
+        and not file_validation.ImapFilePath.is_valid_date(ingestion_start_date)
+    ):
+        raise ValueError("Not a valid ingestion start date, use format 'YYYYMMDD'.")
+
+    # Check ingestion-end-date
+    if (
+        ingestion_end_date is not None
+        and not file_validation.ImapFilePath.is_valid_date(ingestion_end_date)
+    ):
+        raise ValueError("Not a valid ingestion end date, use format 'YYYYMMDD'.")
+
     # Check version make sure to include 'latest'
     if version is not None and not file_validation.ImapFilePath.is_valid_version(
         version
     ):
         raise ValueError("Not a valid version, use format 'vXXX'.")
 
-    # check repointing follows 'repoint00000' format
-    if (
-        repointing is not None
-        and not file_validation.ScienceFilePath.is_valid_repointing(repointing)
-    ):
-        raise ValueError(
-            "Not a valid repointing, use format repoint<num>,"
-            " where <num> is a 5 digit integer."
-        )
+    if repointing is not None:
+        # check repointing follows 'repoint00000' format
+        if not file_validation.ScienceFilePath.is_valid_repointing(repointing):
+            try:
+                query_params["repointing"] = int(repointing)
+            except ValueError as err:
+                raise ValueError(
+                    "Not a valid repointing, use format repoint<num>,"
+                    " where <num> is a 5 digit integer."
+                ) from err
+
+        # Query API expects an integer
+        query_params["repointing"] = int(repointing[-5:])
 
     # check extension
-    if extension is not None and extension not in imap_data_access.VALID_FILE_EXTENSION:
-        raise ValueError("Not a valid extension, choose from ('pkts', 'cdf').")
+    if extension is not None and extension not in ScienceFilePath.VALID_EXTENSIONS:
+        raise ValueError(
+            f"Not a valid extension, choose from {ScienceFilePath.VALID_EXTENSIONS}."
+        )
 
-    url = f"{imap_data_access.config['DATA_ACCESS_URL']}"
-    url += f"/query?{urlencode(query_params)}"
+    url = f"{imap_data_access.config['DATA_ACCESS_URL']}/query"
+    request = requests.Request(method="GET", url=url, params=query_params).prepare()
 
-    logger.info("Querying data archive for %s with url %s", query_params, url)
-    request = urllib.request.Request(url, method="GET")
-    with _get_url_response(request) as response:
-        # Retrieve the response as a list of files
-        items = response.read().decode("utf-8")
-        logger.debug("Received response: %s", items)
-        # Decode the JSON string into a list
-        items = json.loads(items)
-        logger.debug("Decoded JSON: %s", items)
+    logger.info("Querying data archive for %s with url %s", query_params, request.url)
+    with _make_request(request) as response:
+        # Decode the JSON response as a list of items
+        items = response.json()
+        logger.debug("Received JSON: %s", items)
 
     # if latest version was included in search then filter returned query for largest.
     if (version == "latest") and items:
@@ -231,6 +243,94 @@ def query(
             if int(each_dict["version"][1:4]) == max_version
         ]
     return items
+
+
+def reprocess(
+    *,
+    start_date: str,
+    end_date: str,
+    instrument: Optional[str] = None,
+    data_level: Optional[str] = None,
+    descriptor: Optional[str] = None,
+):
+    """Trigger reprocessing of files in the IMAP data archive.
+
+    Start date and end date are required for a reprocessing Event. If data_level is
+    provided, instrument and descriptor are required. If descriptor is specified,
+    instrument must be specified as well.
+
+    Parameters
+    ----------
+    start_date : str
+        Start date in YYYYMMDD format. Note this is the date to search for files to
+        reprocess.
+    end_date : str
+        End date in YYYYMMDD format. Note this is the end date to search for files to
+        reprocess.
+    instrument : str, optional
+        Instrument name (e.g. ``mag``)
+    data_level : str, optional
+        Data level (e.g. ``l1a``)
+    descriptor : str, optional
+        Descriptor of the data product / product name (e.g. ``burst``)
+    """
+    # locals() gives us the keyword arguments passed to the function
+    # and allows us to filter out the None values
+    reprocess_params = {
+        key: value for key, value in locals().items() if value is not None
+    }
+    logger.debug("Input reprocessing parameters: %s", reprocess_params)
+
+    # ensuring other parameters are passed
+    if not end_date or not start_date:
+        raise ValueError(
+            "Start date and end date are required for a reprocessing Event."
+        )
+    if data_level:
+        if not instrument or not descriptor:
+            raise ValueError(
+                "If data_level is provided, instrument and descriptor are required."
+            )
+    elif not instrument and descriptor:
+        raise ValueError("If descriptor is provided, instrument must also be provided.")
+    # Check instrument name
+    if instrument is not None and instrument not in imap_data_access.VALID_INSTRUMENTS:
+        raise ValueError(
+            "Not a valid instrument, please choose from "
+            + ", ".join(imap_data_access.VALID_INSTRUMENTS)
+        )
+    # Check data-level
+    # Validate the data_level parameter to ensure it is one of the allowed options
+    # (e.g., l0, l1a, l1b, l2, l3). Raise an error if the value is invalid.
+    if data_level is not None and data_level not in imap_data_access.VALID_DATALEVELS:
+        raise ValueError(
+            "Not a valid data level, choose from "
+            + ", ".join(imap_data_access.VALID_DATALEVELS)
+        )
+    # Check start-date
+    if start_date is not None and not file_validation.ImapFilePath.is_valid_date(
+        start_date
+    ):
+        raise ValueError("Not a valid start date, use format 'YYYYMMDD'.")
+
+    # Check end-date
+    if end_date is not None and not file_validation.ImapFilePath.is_valid_date(
+        end_date
+    ):
+        raise ValueError("Not a valid end date, use format 'YYYYMMDD'.")
+    reprocess_params["reprocessing"] = "True"
+    url = f"{imap_data_access.config['DATA_ACCESS_URL']}/reprocess"
+    request = requests.Request(
+        method="POST", url=url, params=reprocess_params
+    ).prepare()
+
+    logger.info(
+        "Triggering reprocessing for %s with url %s", reprocess_params, request.url
+    )
+    with _make_request(request) as response:
+        # Decode the JSON response as a list of items
+        items = response.json()
+        logger.debug("Received JSON: %s", items)
 
 
 def upload(file_path: Union[Path, str], *, api_key: Optional[str] = None) -> None:
@@ -248,29 +348,32 @@ def upload(file_path: Union[Path, str], *, api_key: Optional[str] = None) -> Non
     if not file_path.exists():
         raise FileNotFoundError(file_path)
 
-    url = f"{imap_data_access.config['DATA_ACCESS_URL']}"
     # The upload name needs to be given as a path parameter
-    url += f"/upload/{file_path.name}"
+    url = f"{imap_data_access.config['DATA_ACCESS_URL']}/upload/{file_path.name}"
     logger.info("Uploading file %s to %s", file_path, url)
 
     # Create a request header with the API key
     api_key = api_key or imap_data_access.config["API_KEY"]
+
     # We send a GET request with the filename and the server
     # will respond with an s3 presigned URL that we can use
     # to upload the file to the data archive
     headers = {"X-api-key": api_key} if api_key else {}
-    request = urllib.request.Request(url, method="GET", headers=headers)
+    request = requests.Request("GET", url, headers=headers).prepare()
 
-    with _get_url_response(request) as response:
-        # Retrieve the key for the upload
-        s3_url = response.read().decode("utf-8")
+    with _make_request(request) as response:
+        s3_url = response.json()
         logger.debug("Received s3 presigned URL: %s", s3_url)
-        s3_url = json.loads(s3_url)
 
     # Follow the presigned URL to upload the file with a PUT request
-    with open(file_path, "rb") as local_file:
-        request = urllib.request.Request(
-            s3_url, data=local_file.read(), method="PUT", headers={"Content-Type": ""}
+    upload_request = requests.Request(
+        "PUT", s3_url, data=file_path.read_bytes(), headers={"Content-Type": ""}
+    ).prepare()
+    with _make_request(upload_request) as response:
+        logger.debug(
+            "Received status code [%s] with response: %s",
+            response.status_code,
+            response.text,
         )
-        with _get_url_response(request) as response:
-            logger.debug("Received response: %s", response.read().decode("utf-8"))
+
+    logger.info("File %s uploaded successfully", file_path)

@@ -5,9 +5,10 @@ import pytest
 
 import imap_data_access
 from imap_data_access import ScienceFilePath
+from imap_data_access.io import IMAPDataAccessError
 from imap_data_access.webpoda import (
     INSTRUMENT_APIDS,
-    _add_webpoda_headers,
+    _get_webpoda_headers,
     download_daily_data,
     download_repointing_data,
     get_packet_binary_data_sctime,
@@ -15,47 +16,68 @@ from imap_data_access.webpoda import (
 )
 
 
-def test_add_webpoda_headers(monkeypatch):
-    request = MagicMock()
-    _add_webpoda_headers(request)
-    assert request.add_header.called
-    assert request.add_header.call_args[0][0] == "Authorization"
-    assert request.add_header.call_args[0][1] == "Basic test_token"
+def test_get_webpoda_headers(monkeypatch):
+    assert _get_webpoda_headers() == {"Authorization": "Basic test_token"}
 
     # Test that it raises with no authorization present
-    request = MagicMock()
     monkeypatch.setitem(imap_data_access.config, "WEBPODA_TOKEN", None)
     with pytest.raises(ValueError, match="The IMAP_WEBPODA_TOKEN"):
-        _add_webpoda_headers(request)
+        _get_webpoda_headers()
 
 
-@patch("imap_data_access.webpoda._get_url_response")
-def test_get_packet_times_ert(mock_get_response):
+def test_get_packet_times_ert(mock_send_request, mock_request):
     mock_response = MagicMock()
-    mock_response.read.return_value = b"2024-12-01T00:00:00\n2024-12-01T00:00:01\n"
-    mock_get_response.return_value.__enter__.return_value = mock_response
+    mock_response.text = "2024-12-01T00:00:00\n2024-12-01T00:00:01\n"
+    mock_send_request.return_value = mock_response
 
     start_time = datetime.datetime(2024, 12, 1, 0, 0, 0)
     end_time = datetime.datetime(2024, 12, 1, 23, 59, 59)
     apid = 1136
 
     result = get_packet_times_ert(apid, start_time, end_time)
+
+    # Verify the request was prepared correctly
+    mock_request.assert_called_once_with(
+        "GET",
+        f"https://lasp.colorado.edu/ops/imap/poda/dap2/apids/SID2/apid_{apid}.txt",
+        headers={"Authorization": "Basic test_token"},
+        params=(
+            f"ert>={start_time.strftime('%Y-%m-%dT%H:%M:%S')}"
+            f"&ert<={end_time.strftime('%Y-%m-%dT%H:%M:%S')}"
+            "&project(time)&formatTime(\"yyyy-MM-dd'T'HH:mm:ss\")"
+        ),
+    )
+
+    # Verify the response was parsed correctly
     assert len(result) == 2
     assert result[0] == datetime.datetime(2024, 12, 1, 0, 0, 0)
     assert result[1] == datetime.datetime(2024, 12, 1, 0, 0, 1)
 
 
-@patch("imap_data_access.webpoda._get_url_response")
-def test_get_packet_binary_data_sctime(mock_get_response):
+def test_get_packet_binary_data_sctime(mock_send_request, mock_request):
     mock_response = MagicMock()
-    mock_response.read.return_value = b"\x00\x01\x02\x03"
-    mock_get_response.return_value.__enter__.return_value = mock_response
+    mock_response.content = b"\x00\x01\x02\x03"
+    mock_send_request.return_value = mock_response
 
     start_time = datetime.datetime(2024, 12, 1, 0, 0, 0)
     end_time = datetime.datetime(2024, 12, 1, 23, 59, 59)
     apid = 1136
 
     result = get_packet_binary_data_sctime(apid, start_time, end_time)
+
+    # Verify the request was prepared correctly
+    mock_request.assert_called_once_with(
+        "GET",
+        f"https://lasp.colorado.edu/ops/imap/poda/dap2/apids/SID2/apid_{apid}.bin",
+        headers={"Authorization": "Basic test_token"},
+        params=(
+            f"time>={start_time.strftime('%Y-%m-%dT%H:%M:%S')}"
+            f"&time<={end_time.strftime('%Y-%m-%dT%H:%M:%S')}"
+            "&project(packet)"
+        ),
+    )
+
+    # Verify the response was parsed correctly
     assert result == b"\x00\x01\x02\x03"
 
 
@@ -69,6 +91,9 @@ def test_download_daily_data(
     mock_get_packet_binary_data_sctime,
     upload_to_server,
 ):
+    # We are mocking the upload, lets also verify that
+    # duplicate files don't propagate any errors.
+    mock_upload.side_effect = IMAPDataAccessError("File already exists")
     mock_get_packet_times_ert.return_value = [
         datetime.datetime(2024, 12, 1, 0, 0, 0),
         datetime.datetime(2024, 12, 2, 0, 0, 0),
@@ -110,6 +135,9 @@ def test_download_repointing_data(
     upload_to_server,
     tmpdir,
 ):
+    # We are mocking the upload, lets also verify that
+    # duplicate files don't propagate any errors.
+    mock_upload.side_effect = IMAPDataAccessError("File already exists")
     mock_get_packet_binary_data_sctime.return_value = b"\x00\x01\x02\x03"
     # Create a fake repointing file
     # We only use repoint_end_time_utc and repoint_id
@@ -118,12 +146,12 @@ def test_download_repointing_data(
         f.write(
             "repoint_start_sec_sclk,repoint_start_subsec_sclk,"
             "repoint_end_sec_sclk,repoint_end_subsec_sclk,"
-            "repoint_start_time_utc,repoint_end_time_utc,"
+            "repoint_start_utc,repoint_end_utc,"
             "repoint_id\n"
             # One packet per pointing period
-            "0,0,1,0,2024-11-30T00:00:00.000000,2024-11-30T20:15:00.000000,1\n"
-            "0,0,1,0,2024-12-01T00:00:00.000000,2024-12-01T00:15:00.000000,2\n"
-            "10,0,11,0,2024-12-02T00:00:00.000000,2024-12-02T00:15:00.000000,3\n"
+            "0,0,1,0,2024-11-30 00:00:00.000,2024-11-30 20:15:00.000,1\n"
+            "0,0,1,0,2024-12-01 00:00:00.000,2024-12-01 00:15:00.000,2\n"
+            "10,0,11,0,2024-12-02 00:00:00.000,2024-12-02 00:15:00.000,3\n"
             # An unfinished repointing maneuver may have NaNs in the end times
             # Make sure we can handle this and ignore it
             "10,0,NaN,NaN,2024-12-03T00:00:00.000000,NaN,4\n"

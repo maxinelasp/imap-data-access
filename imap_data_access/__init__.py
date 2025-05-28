@@ -5,33 +5,52 @@ heliosphere. This package contains the data access tools for the IMAP mission. I
 provides a convenient way to query the IMAP data archive and download data files.
 """
 
+# ruff: noqa: F401
 import importlib.metadata
 import os
 from pathlib import Path
 
 from imap_data_access.file_validation import (
     AncillaryFilePath,
+    CadenceFilePath,
     ImapFilePath,
+    QuicklookFilePath,
     ScienceFilePath,
     SPICEFilePath,
 )
-from imap_data_access.io import download, query, upload
+from imap_data_access.io import download, query, reprocess, upload
+from imap_data_access.processing_input import (
+    AncillaryInput,
+    ProcessingInputCollection,
+    RepointInput,
+    ScienceInput,
+    SPICEInput,
+    SpinInput,
+)
 
 __all__ = [
-    "FILENAME_CONVENTION",
     "VALID_DATALEVELS",
-    "VALID_FILE_EXTENSION",
     "VALID_INSTRUMENTS",
     "AncillaryFilePath",
+    "AncillaryInput",
+    "CadenceFilePath",
     "ImapFilePath",
+    "ProcessingInputCollection",
+    "QuicklookFilePath",
+    "RepointInput",
     "SPICEFilePath",
+    "SPICEInput",
     "ScienceFilePath",
+    "ScienceInput",
+    "SpinInput",
     "download",
     "query",
+    "reprocess",
     "upload",
 ]
 
 __version__ = importlib.metadata.version("imap-data-access")
+
 
 config = {
     "DATA_ACCESS_URL": os.getenv("IMAP_DATA_ACCESS_URL")
@@ -88,6 +107,7 @@ VALID_DATALEVELS = {
     "l2",
     "l2a",
     "l2b",
+    "l2c",
     "l3",
     "l3a",
     "l3b",
@@ -95,17 +115,3 @@ VALID_DATALEVELS = {
     "l3d",
     "l3e",
 }
-
-VALID_FILE_EXTENSION = {"pkts", "cdf"}
-
-FILENAME_CONVENTION = (
-    "<mission>_<instrument>_<datalevel>_<descriptor>_"
-    "<startdate>(-<repointing>)_<version>.<extension>"
-)
-
-ANCILLARY_FILENAME_CONVENTION = (
-    "<mission>_<instrument>_<description>_"
-    "<start_date>(_<end_date>)_<version>.<extension>"
-)
-
-VALID_ANCILLARY_FILE_EXTENSION = {"cdf", "csv", "json"}

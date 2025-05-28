@@ -17,16 +17,14 @@ https://lasp.colorado.edu/galaxy/spaces/IMAP/pages/155648242/Packet+Decommutatio
 import csv
 import datetime
 import logging
-import urllib.parse
-import urllib.request
-import urllib.response
 from pathlib import Path
 
+import requests
+
 import imap_data_access
-from imap_data_access.io import _get_url_response
+from imap_data_access.io import IMAPDataAccessError, _make_request
 
 logger = logging.getLogger(__name__)
-
 
 WEBPODA_APID_URL = "https://lasp.colorado.edu/ops/imap/poda/dap2/apids"
 # The system ID for the IMAP mission
@@ -60,7 +58,7 @@ INSTRUMENT_APIDS = {
     "glows": [1480, 1481],
     "hi": [754, 769, 770, 818, 833, 834, 818, 833, 834],
     "hit": [1251, 1252, 1253],
-    "idex": [1377, 1420, 1424],
+    "idex": [1418, 1419, 1424],
     "lo": [673, 676, 677, 705, 706, 707, 708],
     "mag": [1052, 1068],
     "swapi": [1184, 1188],
@@ -130,22 +128,16 @@ INSTRUMENT_APIDS = {
 }
 
 
-def _add_webpoda_headers(request: urllib.request.Request) -> urllib.request.Request:
-    """Add the necessary headers for webpoda requests.
-
-    This function adds the necessary headers for webpoda requests to the provided
-    request object. It returns the modified request object.
-    """
-    if not imap_data_access.config.get("WEBPODA_TOKEN", ""):
+def _get_webpoda_headers() -> dict:
+    """Get the necessary headers for webpoda requests."""
+    token = imap_data_access.config.get("WEBPODA_TOKEN", "")
+    if not token:
         raise ValueError(
             "The IMAP_WEBPODA_TOKEN environment variable must be set. "
             "You can run the following command to get the token: "
             "echo -n 'username:password' | base64"
         )
-    request.add_header(
-        "Authorization", f"Basic {imap_data_access.config['WEBPODA_TOKEN']}"
-    )
-    return request
+    return {"Authorization": f"Basic {token}"}
 
 
 def get_packet_times_ert(
@@ -176,31 +168,34 @@ def get_packet_times_ert(
     list[datetime.datetime]
         A list of packet times for the given APID between the start and end time.
     """
-    logger.debug(
+    logger.info(
         f"Getting packet times for apid [{apid}] between {start_time} and {end_time}"
     )
 
     # Add a .txt suffix to get the data in text format back
-    query_range = f"{WEBPODA_APID_URL}/{SYSTEM_ID}/apid_{apid}.txt?"
-
+    query_range = f"{WEBPODA_APID_URL}/{SYSTEM_ID}/apid_{apid}.txt"
     # We need to properly encode the query string to make sure the special characters
-    # are handled correctly
-    query_range += urllib.parse.quote(
+    # are handled correctly, so pass them as params
+    params = (
         # Query the ERT field between start and end date
         f"ert>={start_time.strftime('%Y-%m-%dT%H:%M:%S')}"
-        + f"&ert<={end_time.strftime('%Y-%m-%dT%H:%M:%S')}"
+        f"&ert<={end_time.strftime('%Y-%m-%dT%H:%M:%S')}"
         # only get the time (packet time)
         # Represent all times in yyyy-MM-dd'T'HH:mm:ss format
-        + "&project(time)&formatTime(\"yyyy-MM-dd'T'HH:mm:ss\")"
+        "&project(time)&formatTime(\"yyyy-MM-dd'T'HH:mm:ss\")"
     )
 
-    request = urllib.request.Request(query_range, method="GET")
-    request = _add_webpoda_headers(request)
+    headers = _get_webpoda_headers()
+    request = requests.Request(
+        "GET", query_range, headers=headers, params=params
+    ).prepare()
+
     # Returns a text file with the packet times
     # 2024-12-01T00:00:00
     # 2024-12-01T00:00:01
-    with _get_url_response(request) as response:
-        data = response.read().decode().split("\n")
+    with _make_request(request) as response:
+        data = response.text.split("\n")
+        logger.debug("Received data: %s", data)
 
     # Iterate over each line in the response, converting them to dates.
     # We first strip the line to remove any whitespace (\r) and skip any trailing lines
@@ -233,28 +228,28 @@ def get_packet_binary_data_sctime(
     bytes
         The binary packet data for the given APID between the start and end time.
     """
-    logger.debug(
+    logger.info(
         f"Getting binary packet data for apid [{apid}] between "
         f"{start_time} and {end_time}"
     )
 
     # Add a .bin suffix to get the binary data back
-    query_range = f"{WEBPODA_APID_URL}/{SYSTEM_ID}/apid_{apid}.bin?"
-
-    # We need to properly encode the query string to make sure the special characters
-    # are handled correctly
-    query_range += urllib.parse.quote(
+    query_range = f"{WEBPODA_APID_URL}/{SYSTEM_ID}/apid_{apid}.bin"
+    params = (
         # Query the SCT field between start and end date
         f"time>={start_time.strftime('%Y-%m-%dT%H:%M:%S')}"
-        + f"&time<={end_time.strftime('%Y-%m-%dT%H:%M:%S')}"
+        f"&time<={end_time.strftime('%Y-%m-%dT%H:%M:%S')}"
         # only the raw packet data
-        + "&project(packet)"
+        "&project(packet)"
     )
-    request = urllib.request.Request(query_range, method="GET")
-    request = _add_webpoda_headers(request)
 
-    with _get_url_response(request) as response:
-        return response.read()
+    headers = _get_webpoda_headers()
+    request = requests.Request(
+        "GET", query_range, headers=headers, params=params
+    ).prepare()
+
+    with _make_request(request) as response:
+        return response.content
 
 
 def download_daily_data(
@@ -337,7 +332,15 @@ def download_daily_data(
         path.write_bytes(daily_packet_content)
         if upload_to_server:
             # Upload the data to the server
-            imap_data_access.upload(path)
+            logger.info("Uploading packet file to the server: %s", path)
+            try:
+                imap_data_access.upload(path)
+            except IMAPDataAccessError as e:
+                # We don't want to ruin all subsequent downloads if one fails
+                # during upload, so log the error and continue
+                logger.error(f"Failed to upload {path} to the server: {e!r}")
+
+    logger.info(f"Finished downloading data for instrument [{instrument}]")
 
 
 def download_repointing_data(  # noqa: PLR0913
@@ -371,8 +374,8 @@ def download_repointing_data(  # noqa: PLR0913
             repoint_start_subsec_sclk	UINT
             repoint_end_sec_sclk	UINT
             repoint_end_subsec_sclk	UINT
-            repoint_start_time_utc	str
-            repoint_end_time_utc	str
+            repoint_start_utc	str
+            repoint_end_utc	str
             repoint_id	UINT
     version : str, optional
         The version to use on the downloaded data file, by default "v001"
@@ -413,9 +416,9 @@ def download_repointing_data(  # noqa: PLR0913
     #       assumed to be the shorter list (1/day vs 1000s of packets/day per apid)
     for i in range(len(repointings) - 1):
         pointing_start = datetime.datetime.strptime(
-            repointings[i]["repoint_end_time_utc"], "%Y-%m-%dT%H:%M:%S.%f"
+            repointings[i]["repoint_end_utc"], "%Y-%m-%d %H:%M:%S.%f"
         )
-        if repointings[i + 1]["repoint_end_time_utc"].lower() == "nan":
+        if repointings[i + 1]["repoint_end_utc"].lower() == "nan":
             # Missing repointing end time, so it isn't a complete "pointing" yet.
             continue
         if pointing_start > packet_times[-1]:
@@ -430,7 +433,7 @@ def download_repointing_data(  # noqa: PLR0913
         #       The times included are [repointing_start, repointing_end), exclusive
         #       on the right edge
         pointing_end = datetime.datetime.strptime(
-            repointings[i + 1]["repoint_end_time_utc"], "%Y-%m-%dT%H:%M:%S.%f"
+            repointings[i + 1]["repoint_end_utc"], "%Y-%m-%d %H:%M:%S.%f"
         ) - datetime.timedelta(seconds=1)
         if pointing_end < packet_times[0]:
             # This pointing is before the first packet time, so skip it
@@ -448,7 +451,8 @@ def download_repointing_data(  # noqa: PLR0913
             continue
 
         logger.info(
-            f"Found packets during pointing between {pointing_start} and {pointing_end}"
+            f"Found packets during pointing [{repointings[i]['repoint_id']}] "
+            f"between {pointing_start} and {pointing_end}"
         )
 
         science_file = imap_data_access.ScienceFilePath.generate_from_inputs(
@@ -481,4 +485,12 @@ def download_repointing_data(  # noqa: PLR0913
         path.write_bytes(pointing_packet_content)
         if upload_to_server:
             # Upload the data to the server
-            imap_data_access.upload(path)
+            logger.info("Uploading packet file to the server: %s", path)
+            try:
+                imap_data_access.upload(path)
+            except IMAPDataAccessError as e:
+                # We don't want to ruin all subsequent downloads if one fails
+                # during upload, so log the error and continue
+                logger.error(f"Failed to upload {path} to the server: {e}")
+
+    logger.info(f"Finished downloading data for instrument [{instrument}]")
