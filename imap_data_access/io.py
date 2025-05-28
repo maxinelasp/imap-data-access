@@ -215,9 +215,9 @@ def query(
                     "Not a valid repointing, use format repoint<num>,"
                     " where <num> is a 5 digit integer."
                 ) from err
-
-        # Query API expects an integer
-        query_params["repointing"] = int(repointing[-5:])
+        else:
+            # Query API expects an integer
+            query_params["repointing"] = int(repointing[-5:])
 
     # check extension
     if extension is not None and extension not in ScienceFilePath.VALID_EXTENSIONS:

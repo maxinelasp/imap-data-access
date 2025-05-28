@@ -176,6 +176,7 @@ def test_download_already_exists(mock_send_request):
         },
         # Make sure not all query params are sent if they are missing
         {"instrument": "swe", "data_level": "l0"},
+        {"instrument": "glows", "data_level": "l1a", "repointing": 1},
         {"instrument": "glows", "data_level": "l1a", "repointing": "1"},
     ],
 )
