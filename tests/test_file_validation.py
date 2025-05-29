@@ -9,6 +9,7 @@ import imap_data_access
 from imap_data_access.file_validation import (
     AncillaryFilePath,
     CadenceFilePath,
+    ImapFilePath,
     QuicklookFilePath,
     ScienceFilePath,
     SPICEFilePath,
@@ -26,6 +27,7 @@ def test_extract_filename_components():
         "descriptor": "burst",
         "start_date": "20210101",
         "repointing": None,
+        "cr": None,
         "version": "v001",
         "extension": "pkts",
     }
@@ -38,6 +40,12 @@ def test_extract_filename_components():
     assert ScienceFilePath.extract_filename_components(
         valid_filename
     ) == expected_output | {"repointing": 1}
+
+    # Add a CR value
+    valid_filename = "imap_mag_l1a_burst_20210101-cr00001_v001.pkts"
+    assert ScienceFilePath.extract_filename_components(
+        valid_filename
+    ) == expected_output | {"cr": 1}
 
     # Add a multi-part hyphen descriptor
     valid_filename = "imap_mag_l1a_burst-1min_20210101_v001.pkts"
@@ -170,6 +178,19 @@ def test_generate_from_inputs():
         "imap/mag/l0/2021/01/imap_mag_l0_raw_20210101-repoint00001_v001.pkts"
     )
     assert sfm.construct_path() == expected_output
+
+    sfm = ScienceFilePath.generate_from_inputs(
+        "glows", "l3a", "test", "20210101", "v001", cr=23
+    )
+    expected_output = imap_data_access.config["DATA_DIR"] / Path(
+        "imap/glows/l3a/2021/01/imap_glows_l3a_test_20210101-cr00023_v001.cdf"
+    )
+    assert sfm.construct_path() == expected_output
+
+    with pytest.raises(ImapFilePath.InvalidImapFileError):
+        sfm = ScienceFilePath.generate_from_inputs(
+            "glows", "l3a", "test", "20210101", "v001", cr=23, repointing=1
+        )
 
 
 def test_spice_file_path():

@@ -155,6 +155,8 @@ class ScienceFilePath(ImapFilePath):
         <start_date>: startdate is the earliest date in the data, format: YYYYMMDD
         <repointing>: This is an optional field. It is used to indicate which
             repointing the data is from, format: repointXXXXX
+        <cr>: This is an optional field describing the Carrington rotation.
+            format: crXXXXX.
         <version>: This stores the data version for this product, format: vXXX
 
         Parameters
@@ -178,6 +180,7 @@ class ScienceFilePath(ImapFilePath):
         self.descriptor = split_filename["descriptor"]
         self.start_date = split_filename["start_date"]
         self.repointing = split_filename["repointing"]
+        self.cr = split_filename["cr"]
         self.version = split_filename["version"]
         self.extension = split_filename["extension"]
 
@@ -195,6 +198,7 @@ class ScienceFilePath(ImapFilePath):
         version: str,
         extension: str = "cdf",
         repointing: int | str | None = None,
+        cr: int | None = None,
     ) -> ScienceFilePath:
         """Generate a filename from given inputs and return a ScienceFilePath instance.
 
@@ -224,6 +228,9 @@ class ScienceFilePath(ImapFilePath):
             The repointing number for this file, optional field that
             is not always present. Should be either a string like "repointXXXXX" or an
             integer like 12345.
+        cr : int, optional
+            The Carrington rotation number for the file. This is an optional field.
+            Only one (or zero) of repoint or CR can be included.
 
         Returns
         -------
@@ -238,7 +245,12 @@ class ScienceFilePath(ImapFilePath):
                 time_field += f"-{repointing}"
             elif isinstance(repointing, int):
                 time_field += f"-repoint{repointing:05d}"
-
+            if cr:
+                raise ImapFilePath.InvalidImapFileError(
+                    "Only one of CR or repointing can be included."
+                )
+        if cr:
+            time_field += f"-cr{cr:05d}"
         filename = (
             f"imap_{instrument}_{data_level}_{descriptor}_{time_field}_"
             f"{version}.{extension}"
@@ -330,7 +342,8 @@ class ScienceFilePath(ImapFilePath):
         """Extract all components from filename. Does not validate instrument or level.
 
         Will return a dictionary with the following keys:
-        { instrument, datalevel, descriptor, startdate, enddate, version, extension }
+        { instrument, datalevel, descriptor, startdate, enddate, version, extension, cr,
+        repointing }
 
         If a match is not found, a ValueError will be raised.
 
@@ -353,7 +366,8 @@ class ScienceFilePath(ImapFilePath):
             r"(?P<data_level>[^_]+)_"
             r"(?P<descriptor>[^_]+)_"
             r"(?P<start_date>\d{8})"
-            r"(-repoint(?P<repointing>\d{5}))?"  # Optional repointing field
+            # Optional repointing/CR field
+            r"(-(?P<interval_type>(?:repoint|cr))(?P<interval>\d{5}))?"
             r"_(?P<version>v\d{3})"
             r"\.(?P<extension>[^.]+)$"
         )
@@ -368,9 +382,22 @@ class ScienceFilePath(ImapFilePath):
             )
 
         components = match.groupdict()
-        if components["repointing"]:
+        components["repointing"] = None
+        components["cr"] = None
+
+        # If the repointing field exists, we want to check if it's a repointing or
+        # carrington rotation (cr) and set the field accordingly
+        interval_number = components.pop("interval")
+        if interval_number:
+            interval_number = int(interval_number)
             # We want the repointing number as an integer
-            components["repointing"] = int(components["repointing"])
+            if components["interval_type"] == "cr":
+                components["cr"] = interval_number
+            elif components["interval_type"] == "repoint":
+                components["repointing"] = interval_number
+
+        del components["interval_type"]
+
         return components
 
     @staticmethod
@@ -406,6 +433,22 @@ class ScienceFilePath(ImapFilePath):
             return True
         else:
             return False
+
+    @staticmethod
+    def is_valid_cr(input_cr: str) -> bool:
+        """Check input carrington rotation string is in valid format 'crXXXXX'.
+
+        Parameters
+        ----------
+        input_cr : str
+            Carrington rotation to be checked.
+
+        Returns
+        -------
+        bool
+            Whether input carrington rotation is valid or not.
+        """
+        return re.fullmatch(r"cr\d{5}", str(input_cr))
 
 
 # Transform the suffix to the directory structure we are using
