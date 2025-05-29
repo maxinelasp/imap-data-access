@@ -20,10 +20,16 @@ import argparse
 import datetime
 import logging
 import os
+from argparse import ArgumentParser
 from pathlib import Path
 
 import imap_data_access
-from imap_data_access.file_validation import ScienceFilePath
+from imap_data_access.file_validation import (
+    AncillaryFilePath,
+    ScienceFilePath,
+    generate_imap_file_path,
+)
+from imap_data_access.io import query
 from imap_data_access.webpoda import download_daily_data
 
 
@@ -48,12 +54,19 @@ def _print_query_results_table(query_results: list[dict]):
         A list of dictionaries containing the query results
     """
     num_files = len(query_results)
-    print(f"Found [{num_files}] matching files")
+    # Get the database table
+    query_table = ""
+    if "end_date" in query_results[0]:
+        query_table = "ancillary"
+    elif "repointing" in query_results[0]:
+        query_table = "science"
+
+    print(f"Found [{num_files}] matching files in {query_table} table")
     if num_files == 0:
         return
 
     # Use the query_results for the header
-    headers = [
+    headers_science = [
         "Instrument",
         "Data Level",
         "Descriptor",
@@ -63,6 +76,19 @@ def _print_query_results_table(query_results: list[dict]):
         "Version",
         "Filename",
     ]
+    headers_ancillary = [
+        "Instrument",
+        "Descriptor",
+        "Start Date",
+        "End Date",
+        "Ingestion Date",
+        "Version",
+        "Filename",
+    ]
+    # Set appropriate headers for desired table
+    headers = headers_science
+    if query_table == "ancillary":
+        headers = headers_ancillary
 
     # Calculate the maximum width for each column based on the header and the data
     # have to adjust Ingestion Date and Filename to properly align
@@ -106,16 +132,28 @@ def _print_query_results_table(query_results: list[dict]):
 
     # Print data
     for item in query_results:
-        values = [
-            str(item.get("instrument", "")),
-            str(item.get("data_level", "")),
-            str(item.get("descriptor", "")),
-            str(item.get("start_date", "")),
-            str(item.get("ingestion_date", "")),
-            str(item.get("repointing", "")) or "",
-            str(item.get("version", "")),
-            os.path.basename(item.get("file_path", "")),
-        ]
+        if query_table == "ancillary":
+            values = [
+                str(item.get("instrument", "")),
+                str(item.get("descriptor", "")),
+                str(item.get("start_date", "")),
+                str(item.get("end_date", "")),
+                str(item.get("ingestion_date", "")),
+                str(item.get("version", "")),
+                os.path.basename(item.get("file_path", "")),
+            ]
+        # Science table print
+        else:
+            values = [
+                str(item.get("instrument", "")),
+                str(item.get("data_level", "")),
+                str(item.get("descriptor", "")),
+                str(item.get("start_date", "")),
+                str(item.get("ingestion_date", "")),
+                str(item.get("repointing", "")) or "",
+                str(item.get("version", "")),
+                os.path.basename(item.get("file_path", "")),
+            ]
         print(format_string.format(*values))
 
     # Close the table
@@ -130,8 +168,11 @@ def _query_parser(args: argparse.Namespace):
     args : argparse.Namespace
         An object containing the parsed arguments and their values
     """
-    # Filter to get the arguments of interest from the namespace
+    # Sets table parameter to science if not provided.
+    args.table = getattr(args, "table", "science")
+
     valid_args = [
+        "table",
         "instrument",
         "data_level",
         "descriptor",
@@ -145,6 +186,7 @@ def _query_parser(args: argparse.Namespace):
         "filename",
     ]
 
+    # Filter to get the arguments of interest from the namespace
     query_params = {
         key: value
         for key, value in vars(args).items()
@@ -154,21 +196,47 @@ def _query_parser(args: argparse.Namespace):
     # Checking to see if a filename was passed.
     if args.filename is not None:
         del query_params["filename"]
-        if query_params:
-            raise TypeError("Too many arguments, '--filename' should be ran by itself")
+        # need to see if any other params besides table where provided
+        non_table_params = {k: v for k, v in query_params.items() if k != "table"}
+        if non_table_params:
+            raise TypeError(
+                "Too many arguments: '--filename' should be used by itself."
+            )
 
-        file_path = ScienceFilePath(args.filename)
-        query_params = {
-            "instrument": file_path.instrument,
-            "data_level": file_path.data_level,
-            "descriptor": file_path.descriptor,
-            "start_date": file_path.start_date,
-            "repointing": file_path.repointing,
-            "version": file_path.version,
-            "extension": file_path.extension,
-        }
+        file_path = generate_imap_file_path(args.filename)
+        # ancillary file query
+        if isinstance(file_path, AncillaryFilePath):
+            query_params = {
+                "table": "ancillary",
+                "instrument": file_path.instrument,
+                "descriptor": file_path.descriptor,
+                "start_date": file_path.start_date,
+                "end_date": file_path.end_date,
+                "version": file_path.version,
+                "extension": file_path.extension,
+            }
+            # TODO: add an end_date value if not provided
+        # science table query
+        elif isinstance(file_path, ScienceFilePath):
+            query_params = {
+                "table": "science",
+                "instrument": file_path.instrument,
+                "data_level": file_path.data_level,
+                "descriptor": file_path.descriptor,
+                "start_date": file_path.start_date,
+                "repointing": file_path.repointing,
+                "version": file_path.version,
+                "extension": file_path.extension,
+            }
+            # TODO: add an end_date value if not provided
+        else:
+            raise ValueError("Unrecognized file path type.")
 
-    query_results = imap_data_access.query(**query_params)
+    # SPICE query table
+    elif args.table == "spice":
+        raise NotImplementedError("SPICE query not implemented yet.")
+
+    query_results = query(**query_params)
 
     if args.output_format == "table":
         _print_query_results_table(query_results)
@@ -210,6 +278,102 @@ def _webpoda_parser(args: argparse.Namespace):
         end_time=end_time,
     )
     print("Successfully downloaded the data from webpoda.")
+
+
+def add_query_args(subparser: ArgumentParser) -> None:
+    """Add query arguments to subparser.
+
+    Parameters
+    ----------
+    subparser : argparse.ArgumentParser
+        A subparser to which the shared query arguments are added to.
+    """
+    subparser.add_argument(
+        "--table",
+        type=str,
+        required=False,
+        help="Query a specific table within the IMAP SDC storage bucket. "
+        "This subcommand is optional, with the Science table being the default.",
+        choices=["science", "ancillary", "spice"],
+        default="science",
+    )
+    subparser.add_argument(
+        "--instrument",
+        type=str,
+        required=False,
+        help="Name of the instrument",
+        choices=imap_data_access.VALID_INSTRUMENTS,
+    )
+    subparser.add_argument(
+        "--data-level",
+        type=str,
+        required=False,
+        help="Data level of the product (l0, l1a, l2, etc.)",
+    )
+    subparser.add_argument(
+        "--descriptor",
+        type=str,
+        required=False,
+        help="Descriptor of the product (raw, burst, etc.)",
+    )
+    subparser.add_argument(
+        "--start-date",
+        type=str,
+        required=False,
+        help="Start date for files in YYYYMMDD format",
+    )
+    subparser.add_argument(
+        "--end-date",
+        type=str,
+        required=False,
+        help="End date for a range of file timestamps in YYYYMMDD format",
+    )
+    subparser.add_argument(
+        "--ingestion-start-date",
+        type=str,
+        required=False,
+        help="Ingestion start date for a range of file timestamps in YYYYMMDD format",
+    )
+    subparser.add_argument(
+        "--ingestion-end-date",
+        type=str,
+        required=False,
+        help="Ingestion end date for a range of file timestamps in YYYYMMDD format",
+    )
+    subparser.add_argument(
+        "--repointing",
+        type=str,
+        required=False,
+        help="Repointing number (repoint00000)",
+    )
+    subparser.add_argument(
+        "--version",
+        type=str,
+        required=False,
+        help="Version of the product in the format 'v001'."
+        " Must have one other parameter to run."
+        " Passing 'latest' will return latest version of a file",
+    )
+    subparser.add_argument(
+        "--extension", type=str, required=False, help="File extension (cdf, pkts)"
+    )
+    subparser.add_argument(
+        "--output-format",
+        type=str,
+        required=False,
+        help="How to format the output, default is 'table'",
+        choices=["table", "json"],
+        default="table",
+    )
+    subparser.add_argument(
+        "--filename",
+        type=str,
+        required=False,
+        help="Name of a file to be searched for. For convention standards see https://imap-"
+        "processing.readthedocs.io/en/latest/development-guide/style-guide/naming-conventions"
+        ".html#data-product-file-naming-conventions",
+    )
+    subparser.set_defaults(func=_query_parser)
 
 
 def _reprocess_parser(args: argparse.Namespace):
@@ -354,83 +518,7 @@ def main():  # noqa: PLR0915
     query_parser = subparsers.add_parser(
         "query", help=query_help, description=help_menu_for_query
     )
-    query_parser.add_argument(
-        "--instrument",
-        type=str,
-        required=False,
-        help="Name of the instrument",
-        choices=imap_data_access.VALID_INSTRUMENTS,
-    )
-    query_parser.add_argument(
-        "--data-level",
-        type=str,
-        required=False,
-        help="Data level of the product (l0, l1a, l2, etc.)",
-    )
-    query_parser.add_argument(
-        "--descriptor",
-        type=str,
-        required=False,
-        help="Descriptor of the product (raw, burst, etc.)",
-    )
-    query_parser.add_argument(
-        "--start-date",
-        type=str,
-        required=False,
-        help="Start date for files in YYYYMMDD format",
-    )
-    query_parser.add_argument(
-        "--end-date",
-        type=str,
-        required=False,
-        help="End date for a range of file timestamps in YYYYMMDD format",
-    )
-    query_parser.add_argument(
-        "--ingestion-start-date",
-        type=str,
-        required=False,
-        help="Ingestion start date for a range of file timestamps in YYYYMMDD format",
-    )
-    query_parser.add_argument(
-        "--ingestion-end-date",
-        type=str,
-        required=False,
-        help="Ingestion end date for a range of file timestamps in YYYYMMDD format",
-    )
-    query_parser.add_argument(
-        "--repointing",
-        type=str,
-        required=False,
-        help="Repointing number (repoint00000)",
-    )
-    query_parser.add_argument(
-        "--version",
-        type=str,
-        required=False,
-        help="Version of the product in the format 'v001'."
-        " Must have one other parameter to run."
-        " Passing 'latest' will return latest version of a file",
-    )
-    query_parser.add_argument(
-        "--extension", type=str, required=False, help="File extension (cdf, pkts)"
-    )
-    query_parser.add_argument(
-        "--output-format",
-        type=str,
-        required=False,
-        help="How to format the output, default is 'table'",
-        choices=["table", "json"],
-        default="table",
-    )
-    query_parser.add_argument(
-        "--filename",
-        type=str,
-        required=False,
-        help="Name of a file to be searched for. For convention standards see https://imap-"
-        "processing.readthedocs.io/en/latest/development-guide/style-guide/naming-conventions"
-        ".html#data-product-file-naming-conventions",
-    )
-    query_parser.set_defaults(func=_query_parser)
+    add_query_args(query_parser)
 
     # Upload command
     parser_upload = subparsers.add_parser(
