@@ -163,6 +163,7 @@ def test_download_already_exists(mock_send_request):
     [
         # All parameters should send full query
         {
+            "table": "science",
             "instrument": "swe",
             "data_level": "l0",
             "descriptor": "test-description",
@@ -275,7 +276,9 @@ def test_query_bad_params(mock_send_request):
         (
             "extension",
             "badInput",
-            "Not a valid extension, choose from",
+            # since no table is provided it does not know what
+            # extension to check against
+            "Not a valid table.",
         ),
     ],
 )

@@ -9,7 +9,11 @@ import requests
 
 import imap_data_access
 from imap_data_access import file_validation
-from imap_data_access.file_validation import ScienceFilePath, generate_imap_file_path
+from imap_data_access.file_validation import (
+    AncillaryFilePath,
+    ScienceFilePath,
+    generate_imap_file_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +94,7 @@ def download(file_path: Union[Path, str]) -> Path:
 # ruff: noqa: PLR0912
 def query(
     *,
+    table: Optional[str] = None,
     instrument: Optional[str] = None,
     data_level: Optional[str] = None,
     descriptor: Optional[str] = None,
@@ -110,6 +115,9 @@ def query(
 
     Parameters
     ----------
+    table : str, optional
+        The desired table for the query to be performed against.
+        Defaults to the science table.
     instrument : str, optional
         Instrument name (e.g. ``mag``)
     data_level : str, optional
@@ -156,6 +164,12 @@ def query(
         raise ValueError(
             "At least one query parameter must be provided. "
             "Run 'query -h' for more information."
+        )
+    # Check table name
+    if table is not None and table not in ("science", "ancillary", "spice"):
+        raise ValueError(
+            "Not a valid database table, please choose from "
+            "'science', 'ancillary', or 'spice'."
         )
     # Check instrument name
     if instrument is not None and instrument not in imap_data_access.VALID_INSTRUMENTS:
@@ -220,10 +234,18 @@ def query(
             query_params["repointing"] = int(repointing[-5:])
 
     # check extension
-    if extension is not None and extension not in ScienceFilePath.VALID_EXTENSIONS:
-        raise ValueError(
-            f"Not a valid extension, choose from {ScienceFilePath.VALID_EXTENSIONS}."
-        )
+    if extension is not None:
+        if table == "science":
+            valid_extensions = ScienceFilePath.VALID_EXTENSIONS
+        elif table == "ancillary":
+            valid_extensions = AncillaryFilePath.VALID_EXTENSIONS
+        else:
+            raise ValueError("Not a valid table.")
+
+        if extension not in valid_extensions:
+            raise ValueError(
+                f"Not a valid extension for '{table}', choose from {valid_extensions}."
+            )
 
     url = f"{imap_data_access.config['DATA_ACCESS_URL']}/query"
     request = requests.Request(method="GET", url=url, params=query_params).prepare()
